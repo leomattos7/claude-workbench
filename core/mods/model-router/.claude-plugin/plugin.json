@@ -1,0 +1,6 @@
+{
+  "name": "model-router",
+  "version": "0.1.0",
+  "description": "Caps the model of each subagent by agent type so planning can stay on a strong model while reading and execution run on cheaper ones.",
+  "author": { "name": "workbench" }
+}

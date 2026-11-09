@@ -1,0 +1,11 @@
+{
+  "hooks": {
+    "Notification": [
+      {
+        "hooks": [
+          { "type": "command", "command": "\"$HOME/.claude/hooks/workbench/notify.sh\"", "timeout": 5 }
+        ]
+      }
+    ]
+  }
+}

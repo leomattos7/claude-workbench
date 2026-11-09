@@ -1,0 +1,4 @@
+node_modules/
+.port/
+*.bak-*
+.claude-plugin/types/

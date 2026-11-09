@@ -1,0 +1,84 @@
+filters:
+  and:
+    - file.inFolder("wiki")
+    - 'file.ext == "md"'
+    - 'file.basename != "index"'
+    - 'file.basename != "log"'
+
+formulas:
+  days: 'if(updated, (today() - date(updated)).days, "")'
+  links_in: 'file.backlinks.length'
+
+properties:
+  type:
+    displayName: Type
+  tags:
+    displayName: Tags
+  updated:
+    displayName: Updated
+  reviewed:
+    displayName: Reviewed
+  formula.days:
+    displayName: Days
+  formula.links_in:
+    displayName: Backlinks
+
+views:
+  - type: table
+    name: Recent
+    limit: 25
+    order:
+      - file.name
+      - type
+      - tags
+      - updated
+    sort:
+      - property: updated
+        direction: DESC
+
+  - type: table
+    name: To review
+    filters: 'reviewed != true'
+    groupBy:
+      property: type
+      direction: ASC
+    order:
+      - file.name
+      - tags
+      - updated
+      - formula.links_in
+    sort:
+      - property: formula.links_in
+        direction: DESC
+
+  - type: table
+    name: By type
+    groupBy:
+      property: type
+      direction: ASC
+    order:
+      - file.name
+      - tags
+      - formula.links_in
+      - reviewed
+
+  - type: cards
+    name: Sources
+    filters: 'type == "source"'
+    order:
+      - file.name
+      - raw
+      - tags
+      - updated
+
+  - type: table
+    name: Aging
+    filters: 'formula.days > 60'
+    order:
+      - file.name
+      - type
+      - updated
+      - formula.days
+    sort:
+      - property: updated
+        direction: ASC

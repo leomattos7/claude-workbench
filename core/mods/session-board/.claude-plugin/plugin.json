@@ -1,0 +1,6 @@
+{
+  "name": "session-board",
+  "version": "0.1.0",
+  "description": "Shows the Claude Code sessions open on this machine with /board and warns once when this session's context passes 65%.",
+  "author": { "name": "workbench" }
+}

@@ -1,0 +1,19 @@
+# workbench-briefing config (sourced by bash).
+
+# Git repositories to summarize. Commits since the previous workday, branch, uncommitted
+# changes and the latest 3 files in <repo>/docs/handoffs/*.md are collected for each.
+REPOS=(
+  # "$HOME/projects/my-app"
+)
+
+# Where YYYY-MM-DD.md briefings are written.
+OUT_DIR="$HOME/briefings"
+
+# Optional: model alias or name passed to `claude --model` (empty = your default).
+MODEL=""
+
+# Optional: a free-text file (reminders, deadlines, who is out) appended to the facts.
+NOTES_FILE=""
+
+# 1 = notify when the briefing is ready, 0 = stay quiet.
+NOTIFY=1

@@ -1,0 +1,111 @@
+#!/usr/bin/env bash
+# Daily morning briefing: collect repo facts, ask Claude (no tools, MCP or customizations) for a short summary, save it.
+#
+# Usage: workbench-briefing [--force] [--no-notify] [--dry-run] [--install-cron | --uninstall-cron]
+#   --force           regenerate even if today's briefing exists
+#   --no-notify       do not send a notification
+#   --dry-run         print the collected facts and the claude command; call nothing, write nothing
+#   --install-cron    add a 07:30 Mon-Fri crontab entry (between "# workbench-briefing" markers)
+#   --uninstall-cron  remove that entry
+# Config: ~/.config/workbench/briefing.conf (REPOS, OUT_DIR, MODEL, NOTES_FILE, NOTIFY).
+# Each run calls `claude -p` and costs tokens.
+set -euo pipefail
+export PATH="$PATH:$HOME/.local/bin:/usr/local/bin:/usr/bin:/bin"   # cron has a minimal PATH; never shadow the user's own tools
+
+share="${WORKBENCH_BRIEFING_DIR:-$HOME/.local/share/workbench/briefing}"
+conf="${WORKBENCH_BRIEFING_CONF:-$HOME/.config/workbench/briefing.conf}"
+force=0; notify_flag=1; dry=0; cron=""
+
+for a in "$@"; do
+  case "$a" in
+    --force) force=1 ;;
+    --no-notify) notify_flag=0 ;;
+    --dry-run) dry=1 ;;
+    --install-cron) cron=install ;;
+    --uninstall-cron) cron=uninstall ;;
+    -h|--help) sed -n '2,10p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    *) echo "unknown flag: $a" >&2; exit 2 ;;
+  esac
+done
+
+if [ -n "$cron" ]; then
+  rc=0; current="$(crontab -l 2>&1)" || rc=$?
+  if [ "$rc" != 0 ]; then
+    case "$current" in
+      "no crontab for"*) current="" ;;
+      *) echo "crontab -l failed, crontab left unchanged: $current" >&2; exit 1 ;;
+    esac
+  fi
+  # every begin marker must be closed by an end marker before the next begin (order matters:
+  # sed would otherwise delete from a stray begin to the end of the crontab)
+  if ! printf '%s\n' "$current" | awk '
+      $0=="# workbench-briefing"     { if (open) exit 1; open=1 }
+      $0=="# end workbench-briefing" { if (!open) exit 1; open=0 }
+      END { exit open }'; then
+    echo "crontab has unbalanced or out-of-order workbench-briefing markers; fix it by hand (crontab -e). Crontab left unchanged." >&2
+    exit 1
+  fi
+  stripped="$(printf '%s\n' "$current" | sed '/^# workbench-briefing$/,/^# end workbench-briefing$/d')"
+  if [ "$cron" = install ]; then
+    stripped="$(printf '%s\n' "$stripped"; printf '# workbench-briefing\n30 7 * * 1-5 %s >/dev/null 2>&1\n# end workbench-briefing\n' "$HOME/.local/bin/workbench-briefing")"
+  elif ! printf '%s\n' "$current" | grep -qx '# workbench-briefing'; then
+    echo "no workbench-briefing cron entry found"; exit 0
+  fi
+  printf '%s\n' "$stripped" | sed '/./,$!d' | crontab -
+  echo "cron ${cron}ed"
+  exit 0
+fi
+
+REPOS=(); OUT_DIR="$HOME/briefings"; MODEL=""; NOTES_FILE=""; NOTIFY=1
+[ -f "$conf" ] || { echo "no config at $conf (run the optional/briefing setup first)" >&2; exit 1; }
+# shellcheck source=/dev/null
+source "$conf"
+OUT_DIR="${OUT_DIR/#\~/$HOME}"
+[ "$NOTIFY" = 1 ] || notify_flag=0
+
+today="$(date +%F)"
+out="$OUT_DIR/$today.md"
+notes_args=(); [ -z "$NOTES_FILE" ] || notes_args=(--notes "$NOTES_FILE")
+facts() { python3 -I "$share/collect.py" --date "$today" "${notes_args[@]}" "${REPOS[@]}"; }
+
+# Text in, text out: --tools "" disables built-in tools, --strict-mcp-config (no --mcp-config) skips
+# every MCP server, --safe-mode disables hooks, plugins, skills, CLAUDE.md and other customizations.
+# The input (commit subjects, handoff titles) is untrusted, so nothing here may be able to act on it.
+cmd=(claude -p --tools "" --strict-mcp-config --safe-mode --no-session-persistence)
+[ -z "$MODEL" ] || cmd+=(--model "$MODEL")
+
+if [ "$dry" = 1 ]; then
+  facts
+  echo "---"
+  echo "[dry-run] would run: (cd $OUT_DIR && cat $share/prompt.md + facts | timeout 600 $(printf '%q ' "${cmd[@]}")) > $out"
+  exit 0
+fi
+
+mkdir -p "$OUT_DIR"
+log="$OUT_DIR/.log"
+exec 9>"$OUT_DIR/.lock"; flock -n 9 || exit 0   # one run at a time
+if [ "$force" = 0 ] && [ -s "$out" ]; then echo "already generated: $out"; exit 0; fi
+
+# From cron there is no WSL_INTEROP: find a live interop socket so Windows toasts still work.
+if [ -z "${WSL_INTEROP:-}" ]; then
+  for s in /run/WSL/*_interop; do [ -S "$s" ] && export WSL_INTEROP="$s" && break; done
+fi
+
+{
+  echo "== $(date '+%F %T') generating briefing for $today"
+  text="$(cd "$OUT_DIR" && printf '%s\n\n---\n\n%s\n' "$(cat "$share/prompt.md")" "$(facts)" \
+    | timeout 600 "${cmd[@]}" 2>>"$log")"
+  [ -n "$text" ] || { echo "empty response"; exit 1; }
+  printf '%s\n' "$text" > "$out"
+  echo "ok: $out"
+
+  if [ "$notify_flag" = 1 ]; then
+    hook="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/hooks/workbench/notify.sh"
+    if [ -x "$hook" ]; then
+      printf '{"cwd":"%s","message":"Morning briefing ready: %s"}' "$OUT_DIR" "$today" | "$hook" || true
+    elif command -v notify-send >/dev/null 2>&1; then
+      notify-send "Morning briefing" "$out" || true
+    fi
+  fi
+} >>"$log" 2>&1
+echo "$out"

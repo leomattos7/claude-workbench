@@ -1,0 +1,210 @@
+#!/usr/bin/env bash
+# claude-account: extra Claude Code accounts that share one config.
+# Each account gets its own dir (~/.claude-<name>) with its own login and sessions;
+# CLAUDE.md, settings.json, skills, plugins, hooks and plans are symlinks to the main config.
+set -euo pipefail
+
+usage() {
+  cat <<'EOF'
+Usage: claude-account <command> [options]
+
+Commands:
+  add <name> [--share-history]   create ~/.claude-<name>, link shared config, add alias claude-<name>
+  list                           show accounts (alias block, login, shared history)
+  remove <name> [--force]        remove links and alias; delete the dir only with --force if it holds credentials
+
+Options:
+  --dry-run   print actions as "[dry-run] ...", change nothing
+  -h, --help  this help
+
+<name> must match ^[a-z0-9-]+$.  Env: CLAUDE_HOME = shared main config (default: $HOME/.claude)
+EOF
+}
+
+claude_home="${CLAUDE_HOME:-$HOME/.claude}"
+shared=(CLAUDE.md settings.json skills plugins hooks plans)
+ts="$(date +%Y%m%d%H%M%S)"
+dry=0 force=0 share_history=0
+cmd="" name=""
+
+die() { echo "claude-account: $*" >&2; exit 1; }
+say() { if [ "$dry" = 1 ]; then echo "[dry-run] $*"; else echo "$*"; fi; }
+
+begin() { echo "# >>> workbench account $1 >>>"; }
+end() { echo "# <<< workbench account $1 <<<"; }
+block() { begin "$1"; printf "alias claude-%s='CLAUDE_CONFIG_DIR=\$HOME/.claude-%s claude'\n" "$1" "$1"; end "$1"; }
+
+rc_files() {
+  echo "$HOME/.bashrc"
+  if [ -f "$HOME/.zshrc" ]; then echo "$HOME/.zshrc"; fi
+}
+
+# Print $1 without the block of account $2, plus the blank line that precedes it.
+strip_block() {
+  awk -v b="$(begin "$2")" -v e="$(end "$2")" '
+    skip { if ($0 == e) skip = 0; next }
+    $0 == b { held = 0; skip = 1; next }
+    { if (held) print ""; held = 0; if ($0 == "") held = 1; else print }
+    END { if (held) print "" }' "$1"
+}
+
+# Print the current block of account $2 in file $1 (empty if none).
+current_block() {
+  awk -v b="$(begin "$2")" -v e="$(end "$2")" '$0 == b { on = 1 } on { print } $0 == e { on = 0 }' "$1"
+}
+
+install_alias() {
+  local rc="$1" n="$2"
+  if [ -f "$rc" ] && [ "$(current_block "$rc" "$n")" = "$(block "$n")" ]; then
+    echo "alias already in $rc"
+    return
+  fi
+  if [ -f "$rc" ] && [ -n "$(current_block "$rc" "$n")" ]; then
+    say "backup $rc -> $rc.bak-$ts"
+    say "replace alias block in $rc"
+    if [ "$dry" != 1 ]; then
+      cp -p "$rc" "$rc.bak-$ts"
+      strip_block "$rc" "$n" > "$rc.tmp-$ts"
+      cat "$rc.tmp-$ts" > "$rc"
+      rm -f "$rc.tmp-$ts"
+    fi
+  fi
+  say "add alias claude-$n to $rc"
+  if [ "$dry" != 1 ]; then
+    if [ -s "$rc" ]; then echo >> "$rc"; fi
+    block "$n" >> "$rc"
+  fi
+}
+
+remove_alias() {
+  local rc="$1" n="$2"
+  [ -f "$rc" ] && [ -n "$(current_block "$rc" "$n")" ] || return 0
+  say "backup $rc -> $rc.bak-$ts"
+  say "remove alias block claude-$n from $rc"
+  if [ "$dry" != 1 ]; then
+    cp -p "$rc" "$rc.bak-$ts"
+    strip_block "$rc" "$n" > "$rc.tmp-$ts"
+    cat "$rc.tmp-$ts" > "$rc"
+    rm -f "$rc.tmp-$ts"
+  fi
+}
+
+# Make $dir/$item a symlink to $claude_home/$item; a different existing path is backed up first.
+link_item() {
+  local dir="$1" item="$2" src="$claude_home/$2" dst="$1/$2"
+  if [ ! -e "$src" ] && [ ! -L "$src" ]; then
+    echo "skip $item: $src does not exist (re-run add after creating it)"
+    return
+  fi
+  if [ -L "$dst" ] && [ "$(readlink "$dst")" = "$src" ]; then
+    echo "ok $item"
+    return
+  fi
+  if [ -e "$dst" ] || [ -L "$dst" ]; then
+    say "backup $dst -> $dst.bak-$ts"
+    [ "$dry" = 1 ] || mv "$dst" "$dst.bak-$ts"
+  fi
+  say "link $dst -> $src"
+  [ "$dry" = 1 ] || ln -s "$src" "$dst"
+}
+
+# Remove $dir/$item only if it is the symlink this tool creates.
+unlink_item() {
+  local dir="$1" item="$2" src="$claude_home/$2" dst="$1/$2"
+  if [ -L "$dst" ] && [ "$(readlink "$dst")" = "$src" ]; then
+    say "unlink $dst"
+    [ "$dry" = 1 ] || rm "$dst"
+  fi
+}
+
+has_credentials() { [ -e "$1/.credentials.json" ] || [ -e "$1/.claude.json" ]; }
+
+cmd_add() {
+  local dir="$HOME/.claude-$name" item rc
+  [ "$dir" != "$claude_home" ] || die "account dir would be the shared config dir ($claude_home)"
+  if [ ! -d "$dir" ]; then say "create $dir"; [ "$dry" = 1 ] || mkdir -p "$dir"; fi
+  local items=("${shared[@]}")
+  if [ "$share_history" = 1 ]; then items+=(projects); fi
+  for item in "${items[@]}"; do
+    # In a dry run the dir may not exist yet; link_item only reads $dir paths that then do not exist.
+    link_item "$dir" "$item"
+  done
+  while IFS= read -r rc; do install_alias "$rc" "$name"; done < <(rc_files)
+  echo "done. Open a new shell, then run: claude-$name  (first run asks you to log in)"
+}
+
+cmd_list() {
+  local rc n dir seen=" "
+  printf '%-16s %-8s %-10s %s\n' ACCOUNT LOGIN HISTORY DIR
+  while IFS= read -r rc; do
+    [ -f "$rc" ] || continue
+    while IFS= read -r n; do
+      case "$seen" in *" $n "*) continue ;; esac
+      seen="$seen$n "
+      dir="$HOME/.claude-$n"
+      printf '%-16s %-8s %-10s %s\n' "$n" \
+        "$(if has_credentials "$dir"; then echo yes; else echo no; fi)" \
+        "$(if [ -L "$dir/projects" ]; then echo shared; else echo separate; fi)" "$dir"
+    done < <(sed -n 's/^# >>> workbench account \(.*\) >>>$/\1/p' "$rc")
+  done < <(rc_files)
+  if [ "$seen" = " " ]; then echo "(no accounts)"; fi
+}
+
+cmd_remove() {
+  local dir="$HOME/.claude-$name" item rc found=0
+  [ "$dir" != "$claude_home" ] || die "refusing: $dir is the shared config dir"
+  while IFS= read -r rc; do
+    if [ -f "$rc" ] && [ -n "$(current_block "$rc" "$name")" ]; then found=1; fi
+  done < <(rc_files)
+  if [ ! -d "$dir" ] && [ "$found" = 0 ]; then die "unknown account: $name"; fi
+  while IFS= read -r rc; do remove_alias "$rc" "$name"; done < <(rc_files)
+  if [ -d "$dir" ]; then
+    for item in "${shared[@]}" projects; do unlink_item "$dir" "$item"; done
+    if has_credentials "$dir" && [ "$force" != 1 ]; then
+      echo "kept $dir: it holds credentials/sessions. Re-run with --force to delete it."
+    elif [ "$force" = 1 ]; then
+      say "delete $dir"
+      [ "$dry" = 1 ] || rm -rf "$dir"
+    elif [ "$dry" = 1 ]; then
+      say "rmdir $dir (only if empty)"
+    elif rmdir "$dir" 2>/dev/null; then
+      echo "removed empty $dir"
+    else
+      echo "kept $dir: it still has files (sessions, backups). Re-run with --force to delete it."
+    fi
+  fi
+}
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --dry-run) dry=1 ;;
+    --force) force=1 ;;
+    --share-history) share_history=1 ;;
+    -h|--help) usage; exit 0 ;;
+    -*) die "unknown option: $1" ;;
+    *)
+      if [ -z "$cmd" ]; then cmd="$1"
+      elif [ -z "$name" ]; then name="$1"
+      else die "unexpected argument: $1"
+      fi ;;
+  esac
+  shift
+done
+
+case "$cmd" in
+  add|remove)
+    [ -n "$name" ] || die "$cmd needs an account name"
+    [[ "$name" =~ ^[a-z0-9-]+$ ]] || die "invalid name '$name' (use a-z, 0-9, -)"
+    if [ "$cmd" = add ]; then
+      if [ "$force" = 1 ]; then die "--force only applies to remove"; fi
+      cmd_add
+    else
+      if [ "$share_history" = 1 ]; then die "--share-history only applies to add"; fi
+      cmd_remove
+    fi ;;
+  list)
+    if [ -n "$name" ]; then die "list takes no arguments"; fi
+    cmd_list ;;
+  "") usage >&2; exit 2 ;;
+  *) die "unknown command: $cmd" ;;
+esac

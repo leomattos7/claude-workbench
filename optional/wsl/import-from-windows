@@ -1,0 +1,100 @@
+#!/usr/bin/env bash
+# Copy files from Windows (Downloads by default) into a WSL folder and verify the checksum.
+#
+# Usage:
+#   import-from-windows --recent [N]            list the N newest files in Windows Downloads (default 10)
+#   import-from-windows [-d DEST] FILE [...]    copy; FILE can be:
+#                                                 - a bare name (looked up in Downloads)
+#                                                 - a Windows path:  'C:\Users\me\Desktop\doc.md'
+#                                                 - a WSL path:      /mnt/c/Users/me/Desktop/doc.md
+#
+# DEST defaults to ./incoming. Override Downloads with WIN_DOWNLOADS=/mnt/c/....
+# Rules: the original is never modified; an existing file in DEST is never overwritten
+# (identical content: noted and skipped; different content: refused); secrets are refused.
+set -euo pipefail
+
+usage() { sed -n '2,13p' "$0" | sed 's/^# \{0,1\}//'; exit "${1:-0}"; }
+
+dest="./incoming"
+args=()
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -h|--help) usage 0 ;;
+    -d|--dest) [ $# -ge 2 ] || usage 1; dest="$2"; shift 2 ;;
+    *) args+=("$1"); shift ;;
+  esac
+done
+[ ${#args[@]} -gt 0 ] || usage 1
+
+downloads="${WIN_DOWNLOADS:-}"
+if [ -z "$downloads" ]; then
+  command -v cmd.exe >/dev/null 2>&1 || { echo "cmd.exe not found: run inside WSL or set WIN_DOWNLOADS" >&2; exit 1; }
+  profile="$(cd /mnt/c 2>/dev/null && cmd.exe /c 'echo %USERPROFILE%' 2>/dev/null | tr -d '\r')"
+  [ -n "$profile" ] || { echo "could not detect the Windows profile; set WIN_DOWNLOADS" >&2; exit 1; }
+  downloads="$(wslpath -u "$profile")/Downloads"
+fi
+
+if [ "${args[0]}" = "--recent" ]; then
+  n="${args[1]:-10}"
+  echo "Newest in $downloads:"
+  ls -lt --time-style='+%Y-%m-%d %H:%M' "$downloads" 2>/dev/null | sed 1d | head -n "$n" \
+    | awk '{ d=$6" "$7; $1=$2=$3=$4=$5=$6=$7=""; sub(/^ +/,""); printf "  %s  %s\n", d, $0 }'
+  exit 0
+fi
+
+mkdir -p "$dest"
+failures=0
+
+for entry in "${args[@]}"; do
+  if [[ "$entry" =~ ^[A-Za-z]:\\ ]] || [[ "$entry" =~ ^[A-Za-z]:/ ]]; then
+    src="$(wslpath -u "$entry")"
+  elif [[ "$entry" = /* ]]; then
+    src="$entry"
+  else
+    src="$downloads/$entry"
+  fi
+
+  name="$(basename "$src")"
+
+  # Secrets by file name (not content): never copy. Case-insensitive.
+  shopt -s nocasematch
+  case "$name" in
+    .env|.env.*|*.pem|*.key|*.pfx|*.p12|*.ppk|*.kdbx|*.ovpn|.npmrc|.pypirc|credentials*|*credentials*.json|id_rsa*|id_ed25519*|*service-account*.json|*_key.json)
+      shopt -u nocasematch
+      echo "REFUSED: '$name' looks like a secret; not copying." >&2; failures=$((failures+1)); continue ;;
+  esac
+  shopt -u nocasematch
+  case "$src" in
+    */ssh/*|*/.ssh/*)
+      echo "REFUSED: '$src' is inside a keys folder." >&2; failures=$((failures+1)); continue ;;
+  esac
+
+  if [ ! -f "$src" ]; then
+    echo "NOT FOUND: $src" >&2; failures=$((failures+1)); continue
+  fi
+
+  target="$dest/$name"
+  src_sum="$(sha256sum "$src" | cut -d' ' -f1)"
+
+  if [ -e "$target" ]; then
+    if [ "$(sha256sum "$target" | cut -d' ' -f1)" = "$src_sum" ]; then
+      echo "ALREADY THERE (identical): $target"; continue
+    fi
+    echo "REFUSED: $target exists with different content. Rename one of them and retry." >&2
+    failures=$((failures+1)); continue
+  fi
+
+  cp -p -- "$src" "$target"
+
+  if [ "$(sha256sum "$target" | cut -d' ' -f1)" = "$src_sum" ]; then
+    printf 'OK  %s  (%s bytes, sha256 %s)\n' "$target" "$(stat -c %s "$target")" "${src_sum:0:16}"
+    if grep -q $'\r' "$target" 2>/dev/null; then
+      echo "    note: CRLF line endings (Windows format); kept as in the original."
+    fi
+  else
+    echo "FAILED: checksum mismatch after copying $name; removing the copy." >&2
+    rm -f -- "$target"; failures=$((failures+1))
+  fi
+done
+
+[ "$failures" -eq 0 ]
