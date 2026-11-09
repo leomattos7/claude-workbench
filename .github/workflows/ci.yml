@@ -1,0 +1,83 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_call: # from release.yml
+    secrets:
+      WORKBENCH_DENYLIST:
+        required: false
+      WORKBENCH_ALLOWLIST:
+        required: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+      - name: Install Claude Code (mod tests)
+        run: npm install -g @anthropic-ai/claude-code@2.1.319 # zizmor: ignore[adhoc-packages] exact, immutable version
+      - name: tests/run.sh (includes shellcheck)
+        run: bash tests/run.sh
+
+  injection-scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: check-injection
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          # On a PR, run the base branch's checker: a PR that edits only the checker cannot weaken it.
+          # A PR that edits this workflow can; SECURITY.md says those get a line-by-line read.
+          checker=scripts/check-injection.py
+          if [ -n "$BASE_REF" ] && git show "origin/$BASE_REF:scripts/check-injection.py" > "$RUNNER_TEMP/check-injection.py" 2>/dev/null; then
+            checker="$RUNNER_TEMP/check-injection.py"
+          elif [ -n "$BASE_REF" ]; then
+            echo "::notice::base branch has no checker; using the PR's own copy"
+          fi
+          python3 -I "$checker" ${BASE_REF:+--base "origin/$BASE_REF"} "$GITHUB_WORKSPACE"
+
+  leak-check:
+    # Fork PRs get no secrets; they skip this job (the admin's push to main still runs it).
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: check-leaks
+        env:
+          DENYLIST: ${{ secrets.WORKBENCH_DENYLIST }}
+          ALLOWLIST: ${{ secrets.WORKBENCH_ALLOWLIST }}
+        run: |
+          if [ -z "$DENYLIST" ]; then echo "::warning::WORKBENCH_DENYLIST secret not set; skipping"; exit 0; fi
+          printf '%s\n' "$DENYLIST" > "$RUNNER_TEMP/denylist"
+          printf '%s\n' "$ALLOWLIST" > "$RUNNER_TEMP/allowlist"
+          # The log is public: print no hit lines, only the verdict.
+          if WORKBENCH_DENYLIST="$RUNNER_TEMP/denylist" WORKBENCH_ALLOWLIST="$RUNNER_TEMP/allowlist" \
+               bash scripts/check-leaks.sh > /dev/null 2>&1; then
+            echo "check-leaks: clean"
+          else
+            echo "::error::check-leaks found private terms (or failed). Run scripts/check-leaks.sh locally."; exit 1
+          fi

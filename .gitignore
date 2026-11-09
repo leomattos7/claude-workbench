@@ -2,3 +2,4 @@ node_modules/
 .port/
 *.bak-*
 .claude-plugin/types/
+__pycache__/
