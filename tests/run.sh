@@ -7,6 +7,7 @@ pass=0; failn=0
 t()  { if eval "$2" >/dev/null 2>&1; then echo "  ok   $1"; pass=$((pass+1)); else echo "  FAIL $1"; failn=$((failn+1)); fi; }
 
 DENY="${WORKBENCH_DENYLIST:-$HOME/.config/workbench/denylist}"
+ALLOW="${WORKBENCH_ALLOWLIST:-$HOME/.config/workbench/allowlist}"
 T="$(mktemp -d)"; trap 'rm -rf "$T"' EXIT
 export HOME="$T/home"; unset CLAUDE_CONFIG_DIR; mkdir -p "$HOME/.claude"
 C="$HOME/.claude"
@@ -146,7 +147,7 @@ if command -v shellcheck >/dev/null; then
   t "shellcheck" "grep -rlE '^#!/usr/bin/env bash' '$WB' --exclude-dir=.git | xargs shellcheck -S error"
 else echo "  skip shellcheck (not installed)"; fi
 if [ -s "$DENY" ]; then
-  t "check-leaks" "WORKBENCH_DENYLIST='$DENY' bash '$WB/scripts/check-leaks.sh'"
+  t "check-leaks" "WORKBENCH_DENYLIST='$DENY' WORKBENCH_ALLOWLIST='$ALLOW' bash '$WB/scripts/check-leaks.sh'"
 else echo "  skip check-leaks (no denylist; set WORKBENCH_DENYLIST)"; fi
 
 echo "== $pass passed, $failn failed"
