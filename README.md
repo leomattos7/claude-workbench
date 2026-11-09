@@ -7,7 +7,7 @@ It builds on [oh-my-claudecode](https://github.com/Yeachan-Heo/oh-my-claudecode)
 ## Install
 
 ```bash
-git clone https://github.com/<you>/workbench && cd workbench
+git clone https://github.com/leomattos7/workbench && cd workbench
 ./install.sh --dry-run --all     # see what would change; writes nothing
 ./install.sh --all               # or: ./install.sh --with vault,wsl
 ```
