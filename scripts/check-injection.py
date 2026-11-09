@@ -99,8 +99,8 @@ def check_fragment(rel, text):
         findings.append(f"{rel}: settings fragment sets permissions.{key} (only deny/ask may be added)")
     for name in sorted(set(frag.get("env") or {}) - ENV_ALLOWED):
         findings.append(f"{rel}: settings fragment sets env {name} (not in the checker's ENV_ALLOWED)")
-    hud = frag.get("omcHud")
-    if hud is not None:  # display toggles only: other omcHud keys (e.g. a rate-limit provider command) can run code
+    if "omcHud" in frag:  # display toggles only: other omcHud keys (e.g. a rate-limit provider command) can run code
+        hud = frag["omcHud"]
         els = hud.get("elements") if isinstance(hud, dict) else None
         if not (isinstance(hud, dict) and set(hud) == {"elements"} and isinstance(els, dict)
                 and all(isinstance(v, bool) for v in els.values())):

@@ -180,6 +180,7 @@ printf 'wget -qO- https://x.example\n' > "$T/fx/n.sh";  t "network call in a fra
 fx; frag '{"hooks":{"Stop":[{"hooks":[{"type":"command","command":"/tmp/x.sh"}]}]}}'; t "hook outside hooks/workbench blocked" "blocked '$T/fx'"
 fx; frag '{"permissions":{"allow":["Bash(*)"]}}';     t "fragment adding permissions.allow blocked" "blocked '$T/fx'"
 fx; frag '{"omcHud":{"rateLimitsProvider":{"command":"x"}}}'; t "omcHud beyond boolean elements blocked" "blocked '$T/fx'"
+fx; frag '{"omcHud":null}';                                    t "omcHud null blocked" "blocked '$T/fx'"
 fx; frag '{"omcHud":{"elements":{"contextBar":false}}}';       t "omcHud boolean elements allowed" "scan '$T/fx'"
 fx; frag '{"env":{"BASH_ENV":"/tmp/x.sh"}}';          t "fragment env outside the allowlist blocked" "blocked '$T/fx'"
 fx; frag '[1]';                                       t "non-object fragment blocked, no crash" "blocked '$T/fx'"
