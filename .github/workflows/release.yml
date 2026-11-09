@@ -31,11 +31,11 @@ jobs:
           TAG: ${{ github.ref_name }}
         run: |
           mkdir dist
-          git archive --format=tar.gz --prefix="workbench-$TAG/" -o "dist/workbench-$TAG.tar.gz" HEAD
+          git archive --format=tar.gz --prefix="claude-workbench-$TAG/" -o "dist/claude-workbench-$TAG.tar.gz" HEAD
           (cd dist && sha256sum -- * > SHA256SUMS)
       - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
-          subject-path: dist/workbench-*.tar.gz
+          subject-path: dist/claude-workbench-*.tar.gz
       - name: Create release
         env:
           GH_TOKEN: ${{ github.token }}

@@ -20,4 +20,4 @@ into unsafe actions, and the CI workflows. Expect a first reply within a week; t
   runs the workflow file from the PR itself, so such a PR can rewrite the check that judges it. Those PRs get
   a line-by-line read before approval.
 - Releases ship a `SHA256SUMS` file and a build provenance attestation:
-  `gh attestation verify workbench-<tag>.tar.gz --repo leomattos7/workbench`.
+  `gh attestation verify claude-workbench-<tag>.tar.gz --repo leomattos7/claude-workbench`.
