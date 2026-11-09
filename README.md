@@ -1,4 +1,4 @@
-# workbench
+# claude-workbench
 
 A working setup for [Claude Code](https://docs.claude.com/en/docs/claude-code): rules, skills, mods and hooks that make long, multi-session work predictable. It covers planning before coding, verifying before saying "done", cheap subagents and clean handoffs between sessions.
 
@@ -7,7 +7,7 @@ It builds on [oh-my-claudecode](https://github.com/Yeachan-Heo/oh-my-claudecode)
 ## Install
 
 ```bash
-git clone https://github.com/leomattos7/workbench && cd workbench
+git clone https://github.com/leomattos7/claude-workbench && cd claude-workbench
 ./install.sh --dry-run --all     # see what would change; writes nothing
 ./install.sh --all               # or: ./install.sh --with vault,wsl
 ```
