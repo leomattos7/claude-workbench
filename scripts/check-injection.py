@@ -40,7 +40,7 @@ HTML_COMMENT = re.compile(r"<!--(.*?)(?:-->|\Z)", re.S)
 INSTRUCTION = re.compile(r"\b(ignore|disregard|instructions?|system prompt|assistant|you must|execute|run|curl|wget)\b|https?:", re.I)
 FRONTMATTER_RISK = re.compile(r"^(allowed-tools|hooks)\s*:", re.M)
 
-FRAGMENT_KEYS = {"env", "permissions", "hooks", "enabledPlugins", "extraKnownMarketplaces"}
+FRAGMENT_KEYS = {"env", "permissions", "hooks", "enabledPlugins", "extraKnownMarketplaces", "omcHud"}
 PERMISSION_KEYS = {"deny", "ask"}
 FROZEN_KEYS = ("env", "enabledPlugins", "extraKnownMarketplaces")
 ENV_ALLOWED = {"CLAUDE_CODE_PLUGIN_DIRS", "OMC_CONTEXT_GUARD_THRESHOLD"}
@@ -99,6 +99,12 @@ def check_fragment(rel, text):
         findings.append(f"{rel}: settings fragment sets permissions.{key} (only deny/ask may be added)")
     for name in sorted(set(frag.get("env") or {}) - ENV_ALLOWED):
         findings.append(f"{rel}: settings fragment sets env {name} (not in the checker's ENV_ALLOWED)")
+    if "omcHud" in frag:  # display toggles only: other omcHud keys (e.g. a rate-limit provider command) can run code
+        hud = frag["omcHud"]
+        els = hud.get("elements") if isinstance(hud, dict) else None
+        if not (isinstance(hud, dict) and set(hud) == {"elements"} and isinstance(els, dict)
+                and all(isinstance(v, bool) for v in els.values())):
+            findings.append(f"{rel}: omcHud may only hold 'elements' with true/false values")
     for hook in hooks_of(frag):
         if not isinstance(hook, dict) or hook.get("type") != "command" or not HOOK_COMMAND.match(str(hook.get("command"))):
             findings.append(f"{rel}: hook must be a command \"$HOME/.claude/hooks/workbench/<file>\", got {json.dumps(hook)}")

@@ -117,6 +117,22 @@ t "upgrade: no backup of our own previous copy" "! ls '$C/skills/work-mode/' | g
 bash "$T/wb2/uninstall.sh" >/dev/null 2>&1
 t "upgrade then uninstall removes the file (no stale copy restored)" "[ ! -e '$W' ]"
 
+echo "== panels (lean HUD)"
+fresh panels; printf '{"omcHud":{"elements":{"contextBar":true}}}\n' > "$C/settings.json"; cp "$C/settings.json" "$T/panels.orig"
+I --all
+t "--all does not apply the lean HUD" "python3 -I -c '
+import json; d=json.load(open(\"$C/settings.json\")); assert d[\"omcHud\"][\"elements\"]=={\"contextBar\": True}'"
+I --with panels
+t "panels turns off rateLimits and keeps the user's contextBar" "python3 -I -c '
+import json; d=json.load(open(\"$C/settings.json\")); assert d[\"omcHud\"][\"elements\"]=={\"contextBar\": True, \"rateLimits\": False}'"
+fresh panels2; I --with panels
+t "panels on a clean config sets both elements to false" "python3 -I -c '
+import json; d=json.load(open(\"$C/settings.json\")); assert d[\"omcHud\"][\"elements\"]=={\"contextBar\": False, \"rateLimits\": False}'"
+U --with panels
+t "uninstall --with panels removes omcHud entirely" "python3 -I -c '
+import json; assert \"omcHud\" not in json.load(open(\"$C/settings.json\"))'"
+t "unknown optional is still rejected" "! bash '$WB/install.sh' --dry-run --with nope"
+
 echo "== briefing cron (fake crontab only)"
 fresh cron; FAKE="$T/fakebin"; mkdir -p "$FAKE"; export CRONTAB_FILE="$T/crontab.txt"; printf '0 1 * * * keep-me\n' > "$CRONTAB_FILE"
 cat > "$FAKE/crontab" <<'SH'
@@ -163,6 +179,9 @@ fx; frag '{"hooks":{"Notification":[{"hooks":[{"type":"command","command":"\"$HO
 printf 'wget -qO- https://x.example\n' > "$T/fx/n.sh";  t "network call in a fragment's hook script blocked" "blocked '$T/fx' && grep -q 'n.sh:1: network' '$T/scan.out'"
 fx; frag '{"hooks":{"Stop":[{"hooks":[{"type":"command","command":"/tmp/x.sh"}]}]}}'; t "hook outside hooks/workbench blocked" "blocked '$T/fx'"
 fx; frag '{"permissions":{"allow":["Bash(*)"]}}';     t "fragment adding permissions.allow blocked" "blocked '$T/fx'"
+fx; frag '{"omcHud":{"rateLimitsProvider":{"command":"x"}}}'; t "omcHud beyond boolean elements blocked" "blocked '$T/fx'"
+fx; frag '{"omcHud":null}';                                    t "omcHud null blocked" "blocked '$T/fx'"
+fx; frag '{"omcHud":{"elements":{"contextBar":false}}}';       t "omcHud boolean elements allowed" "scan '$T/fx'"
 fx; frag '{"env":{"BASH_ENV":"/tmp/x.sh"}}';          t "fragment env outside the allowlist blocked" "blocked '$T/fx'"
 fx; frag '[1]';                                       t "non-object fragment blocked, no crash" "blocked '$T/fx'"
 fx .github/workflows; printf 'on: pull_request%s\n' _target > "$T/fx/.github/workflows/w.yml"; t "privileged PR trigger blocked" "blocked '$T/fx'"
