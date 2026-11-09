@@ -132,6 +132,31 @@ U --with panels
 t "uninstall --with panels removes omcHud entirely" "python3 -I -c '
 import json; assert \"omcHud\" not in json.load(open(\"$C/settings.json\"))'"
 t "unknown optional is still rejected" "! bash '$WB/install.sh' --dry-run --with nope"
+echo "== other agents (codex, cursor)"
+fresh agents; mkdir -p "$HOME/.codex"; printf '# mine\n' > "$HOME/.codex/AGENTS.md"; cp "$HOME/.codex/AGENTS.md" "$T/agents.orig"
+I
+t "default install touches no other agent" "[ ! -e '$HOME/.agents' ] && [ ! -e '$HOME/.cursor' ] && cmp -s '$HOME/.codex/AGENTS.md' '$T/agents.orig'"
+U; rm -rf "$C"; mkdir -p "$C"
+t "dry-run writes nothing" "snap > '$T/a0'; bash '$WB/install.sh' --agent codex,cursor --dry-run; snap > '$T/a1'; cmp -s '$T/a0' '$T/a1'"
+t "--agent codex,cursor exits 0" "bash '$WB/install.sh' --no-plugins --agent codex,cursor"
+snap > "$T/a2"; I --agent codex,cursor; snap > "$T/a3"
+t "second agent install changes nothing" "cmp -s '$T/a2' '$T/a3'"
+t "codex: rules block added, user text kept" "grep -q '^# mine' '$HOME/.codex/AGENTS.md' && grep -q 'WORKBENCH:CORE:START' '$HOME/.codex/AGENTS.md'"
+t "codex and cursor: handoff skill installed" "[ -f '$HOME/.agents/skills/handoff/SKILL.md' ] && [ -f '$HOME/.cursor/skills/handoff/template.md' ]"
+t "cursor: rules file for pasting" "[ -f '$HOME/.local/share/workbench/rules/AGENTS.md' ]"
+t "no Claude-only text in the agent rules or skills" "! grep -rqiE 'oh-my-claudecode|work-mode|parallel-delegation|allowed-tools' '$HOME/.codex/AGENTS.md' '$HOME/.local/share/workbench/rules' '$HOME/.agents/skills'"
+t "claude files not created" "[ ! -e '$C/settings.json' ] && [ ! -e '$C/skills' ] && [ ! -e '$C/CLAUDE.md' ]"
+t "agent skill frontmatter name matches its folder" "[ \"\$(sed -n 's/^name: *//p' '$HOME/.cursor/skills/handoff/SKILL.md' | head -1)\" = handoff ]"
+t "optionals need claude" "! bash '$WB/install.sh' --no-plugins --agent codex --with wsl"
+t "unknown agent rejected" "! bash '$WB/install.sh' --dry-run --agent nope"
+U --agent codex
+t "uninstall --agent codex restores AGENTS.md and keeps cursor" "cmp -s '$HOME/.codex/AGENTS.md' '$T/agents.orig' && [ ! -e '$HOME/.agents/skills/handoff' ] && [ -f '$HOME/.cursor/skills/handoff/SKILL.md' ]"
+U
+t "uninstall removes cursor files and state" "[ ! -e '$HOME/.cursor/skills/handoff' ] && [ ! -e '$HOME/.local/share/workbench' ]"
+fresh agents2; export CODEX_HOME="$HOME/cx"; I --agent codex; unset CODEX_HOME
+t "CODEX_HOME relocates the rules file" "grep -q 'WORKBENCH:CORE:START' '$HOME/cx/AGENTS.md' && [ ! -e '$HOME/.codex' ]"
+fresh agents3; I --agent claude,codex; U --agent claude
+t "claude uninstall keeps the codex install and its records" "grep -q 'WORKBENCH:CORE:START' '$HOME/.codex/AGENTS.md' && [ -f '$HOME/.agents/skills/handoff/SKILL.md' ] && U --agent codex && [ ! -e '$HOME/.agents/skills/handoff' ] && [ ! -e '$HOME/.local/share/workbench' ]"
 
 echo "== briefing cron (fake crontab only)"
 fresh cron; FAKE="$T/fakebin"; mkdir -p "$FAKE"; export CRONTAB_FILE="$T/crontab.txt"; printf '0 1 * * * keep-me\n' > "$CRONTAB_FILE"

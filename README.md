@@ -41,6 +41,17 @@ Requirements: Linux or WSL, `git` and `python3`. Claude Code must already be ins
 | `briefing` | A morning summary from your git repos and handoffs, run through `claude -p` with built-in tools, MCP servers and customizations disabled. Opt-in cron, and it costs tokens per run. [Details](optional/briefing/README.md) |
 | `panels` | A lean status line: turns off the HUD's context and quota items so they are not shown twice next to the `context-bar` and `orca-quota` panels. Opt-in by name (not in `--all`); the panels are third-party and installed by you. [Details](optional/panels/README.md) |
 
+## Other agents (Codex, Cursor)
+
+`./install.sh --agent codex,cursor` (or `--agent claude,codex,cursor`) installs the portable part: the rules text and the `handoff` skill. Hooks, mods, optionals and the `work-mode` and `parallel-delegation` skills stay Claude Code only, because they lean on oh-my-claudecode and Claude Code tools. `--with`/`--all` need `claude` among the agents.
+
+| Agent | Rules | Skills |
+|---|---|---|
+| Codex | A marked block in `${CODEX_HOME:-~/.codex}/AGENTS.md` | `~/.agents/skills/handoff` |
+| Cursor | No global rules file exists: paste `~/.local/share/workbench/rules/AGENTS.md` into Settings → Rules, or copy it to a project's `AGENTS.md` | `~/.cursor/skills/handoff` |
+
+Cursor also reads `~/.agents/skills`, so with both agents it may list the skill twice. Paths follow each vendor's docs (Codex: AGENTS.md and `.agents/skills`; Cursor: skills, no file-based user rules); neither agent has been run against this installer, only the files it writes are tested. Remove with `./uninstall.sh --agent codex` (or `cursor`). Hermes is not covered yet.
+
 ## How it installs
 
 - Files are copied into `~/.claude` (or `$CLAUDE_CONFIG_DIR`), `~/.local/share/workbench` and `~/.local/bin`. A different existing file is first saved as `.bak-<timestamp>`, and so are `settings.json` and `CLAUDE.md` before their first change.
