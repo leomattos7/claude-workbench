@@ -3,8 +3,8 @@
 #
 # Usage:
 #   ./install.sh                          core only
-#   ./install.sh --with vault,wsl         core + chosen optionals (vault, accounts, wsl, briefing)
-#   ./install.sh --all                    core + every optional
+#   ./install.sh --with vault,wsl         core + chosen optionals (vault, accounts, wsl, briefing, panels)
+#   ./install.sh --all                    core + every optional except panels (opt-in by name)
 #   ./install.sh --dry-run [...]          show what would happen, change nothing
 #   ./install.sh --no-plugins [...]       skip the marketplace plugins (and do not enable them)
 #   ./install.sh --vault-path DIR [...]   where the vault lives (default ~/vault)
@@ -23,7 +23,8 @@ SHARE="$HOME/.local/share/workbench"
 STATE="$SHARE/state/$(printf '%s' "$CLAUDE_HOME" | sha1sum | cut -c1-12)"   # one per config dir
 RECEIPT="$STATE/receipt.json"; FILES="$STATE/files.tsv"
 WB_STAMP="$(date +%Y%m%d%H%M%S)"
-ALL_OPTIONALS="vault accounts wsl briefing"
+ALL_OPTIONALS="vault accounts wsl briefing"   # what --all installs
+KNOWN_OPTIONALS="$ALL_OPTIONALS panels"       # panels removes HUD items, so it is never implied by --all
 OPTIONALS=""; DRY=0; PLUGINS=1; UNINSTALL=0; VAULT_PATH="$HOME/vault"
 MIN_MODS_VERSION="2.1.287"
 export CLAUDE_HOME WB_STAMP
@@ -44,7 +45,7 @@ while [ $# -gt 0 ]; do
   shift
 done
 for o in $OPTIONALS; do
-  case " $ALL_OPTIONALS " in *" $o "*) ;; *) echo "unknown optional: $o (choose from: $ALL_OPTIONALS)" >&2; exit 1 ;; esac
+  case " $KNOWN_OPTIONALS " in *" $o "*) ;; *) echo "unknown optional: $o (choose from: $KNOWN_OPTIONALS)" >&2; exit 1 ;; esac
 done
 case "$VAULT_PATH" in /*) ;; *) VAULT_PATH="$PWD/$VAULT_PATH" ;; esac
 VAULT_PATH="${VAULT_PATH%/}"

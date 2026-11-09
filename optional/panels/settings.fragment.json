@@ -1,0 +1,8 @@
+{
+  "omcHud": {
+    "elements": {
+      "contextBar": false,
+      "rateLimits": false
+    }
+  }
+}

@@ -31,7 +31,7 @@ Requirements: Linux or WSL, `git` and `python3`. Claude Code must already be ins
 | **Safe defaults** | Denies the `Read` tool on `.env*` and `~/.ssh`. Asks before `git push`, `gh pr create/merge` and `gh repo delete`. Denies `Agent(fork)` so every subagent gets an explicit model. Context guard at 70%. These are pattern rules, so variants such as `git -C dir push` or `cat .env` are not caught. |
 | **Plugins** (from their marketplaces) | `oh-my-claudecode` (pinned v5.7.31), `mattpocock-skills`, `andrej-karpathy-skills`. |
 
-### Optionals (`--with <name>` or `--all`)
+### Optionals (`--with <name>`, or `--all` for all but `panels`)
 
 | Name | What it does |
 |---|---|
@@ -39,6 +39,7 @@ Requirements: Linux or WSL, `git` and `python3`. Claude Code must already be ins
 | `accounts` | Several Claude accounts with one shared config: `claude-account add work` gives you `claude-work`. [Details](optional/accounts/README.md) |
 | `wsl` | A Windows toast when a session needs you (falls back to `notify-send` on Linux), plus `import-from-windows` to copy files from Downloads without secrets. [Details](optional/wsl/README.md) |
 | `briefing` | A morning summary from your git repos and handoffs, run through `claude -p` with built-in tools, MCP servers and customizations disabled. Opt-in cron, and it costs tokens per run. [Details](optional/briefing/README.md) |
+| `panels` | A lean status line: turns off the HUD's context and quota items so they are not shown twice next to the `context-bar` and `orca-quota` panels. Opt-in by name (not in `--all`); the panels are third-party and installed by you. [Details](optional/panels/README.md) |
 
 ## How it installs
 
