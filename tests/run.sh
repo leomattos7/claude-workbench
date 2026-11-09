@@ -158,6 +158,26 @@ t "CODEX_HOME relocates the rules file" "grep -q 'WORKBENCH:CORE:START' '$HOME/c
 fresh agents3; I --agent claude,codex; U --agent claude
 t "claude uninstall keeps the codex install and its records" "grep -q 'WORKBENCH:CORE:START' '$HOME/.codex/AGENTS.md' && [ -f '$HOME/.agents/skills/handoff/SKILL.md' ] && U --agent codex && [ ! -e '$HOME/.agents/skills/handoff' ] && [ ! -e '$HOME/.local/share/workbench' ]"
 
+fresh agents4; I --with wsl --agent claude,codex; U --agent claude
+t "uninstall --agent claude also removes the optionals (no dangling hook)" "python3 -I -c '
+import json; d=json.load(open(\"$C/settings.json\")); assert not d.get(\"hooks\"), d.get(\"hooks\")' && [ ! -e '$C/hooks/workbench/notify.sh' ] && ! grep -q optional '$HOME/.local/share/workbench/state'/*/files.tsv 2>/dev/null"
+t "...and the codex install survives it" "grep -q 'WORKBENCH:CORE:START' '$HOME/.codex/AGENTS.md' && [ -f '$HOME/.agents/skills/handoff/SKILL.md' ]"
+U --agent codex
+fresh agents5; export CODEX_HOME="$HOME/cx"; I --agent codex; unset CODEX_HOME; U --agent codex
+t "uninstall finds the block where CODEX_HOME put it at install" "! grep -q WORKBENCH '$HOME/cx/AGENTS.md' 2>/dev/null && [ ! -e '$HOME/.local/share/workbench' ]"
+fresh agents6; I --agent cursor
+t "cursor alone creates no ~/.codex" "[ ! -e '$HOME/.codex' ] && [ -f '$HOME/.cursor/skills/handoff/SKILL.md' ]"
+U --agent cursor
+t "cursor uninstall leaves no state" "[ ! -e '$HOME/.local/share/workbench' ]"
+t "empty --agent rejected" "! bash '$WB/install.sh' --dry-run --agent '' && ! bash '$WB/install.sh' --dry-run --agent=,"
+fresh agents7; export CLAUDE_CONFIG_DIR="$HOME/ca"; mkdir -p "$CLAUDE_CONFIG_DIR"; I --agent claude,codex
+export CLAUDE_CONFIG_DIR="$HOME/cb"; mkdir -p "$CLAUDE_CONFIG_DIR"; I --agent claude,codex
+export CLAUDE_CONFIG_DIR="$HOME/ca"; U
+t "agent files are shared: removed once, from either config dir" "[ ! -e '$HOME/.agents/skills/handoff' ] && ! grep -q WORKBENCH '$HOME/.codex/AGENTS.md' 2>/dev/null"
+export CLAUDE_CONFIG_DIR="$HOME/cb"
+t "other config dir still uninstalls cleanly" "bash '$WB/uninstall.sh' && [ ! -e '$HOME/.local/share/workbench' ]"
+unset CLAUDE_CONFIG_DIR
+
 echo "== briefing cron (fake crontab only)"
 fresh cron; FAKE="$T/fakebin"; mkdir -p "$FAKE"; export CRONTAB_FILE="$T/crontab.txt"; printf '0 1 * * * keep-me\n' > "$CRONTAB_FILE"
 cat > "$FAKE/crontab" <<'SH'

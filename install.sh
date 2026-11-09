@@ -25,6 +25,7 @@ CLAUDE_HOME="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"; CLAUDE_HOME="${CLAUDE_HOME%/}
 SHARE="$HOME/.local/share/workbench"
 STATE="$SHARE/state/$(printf '%s' "$CLAUDE_HOME" | sha1sum | cut -c1-12)"   # one per config dir
 RECEIPT="$STATE/receipt.json"; FILES="$STATE/files.tsv"
+AGENT_STATE="$SHARE/state/agents"; AFILES="$AGENT_STATE/files.tsv"   # Codex/Cursor files are shared by every Claude config dir
 WB_STAMP="$(date +%Y%m%d%H%M%S)"
 ALL_OPTIONALS="vault accounts wsl briefing"   # what --all installs
 KNOWN_OPTIONALS="$ALL_OPTIONALS panels"       # panels removes HUD items, so it is never implied by --all
@@ -57,6 +58,7 @@ done
 for o in $OPTIONALS; do
   case " $KNOWN_OPTIONALS " in *" $o "*) ;; *) echo "unknown optional: $o (choose from: $KNOWN_OPTIONALS)" >&2; exit 1 ;; esac
 done
+[ -n "${AGENTS// /}" ] || { echo "--agent needs at least one of: $KNOWN_AGENTS" >&2; exit 1; }
 for a in $AGENTS; do
   case " $KNOWN_AGENTS " in *" $a "*) ;; *) echo "unknown agent: $a (choose from: $KNOWN_AGENTS)" >&2; exit 1 ;; esac
 done
@@ -193,14 +195,18 @@ for line in open(sys.argv[1], encoding="utf-8").read().splitlines():
 open(sys.argv[2], "w", encoding="utf-8").write(re.sub(r"\n{3,}", "\n\n", "\n".join(out)) + "\n")' "$WB/core/CLAUDE.md" "$1"
 }
 
+# Agent records live in $AFILES: point FILES at it while installing or removing an agent.
+with_agent_state() { local saved="$FILES"; FILES="$AFILES"; "$@"; local rc=$?; FILES="$saved"; return $rc; }
 has_component() { [ -f "$FILES" ] && awk -F'\t' -v c="$1" '$1==c {f=1} END {exit !f}' "$FILES"; }
 
-install_agent() { # install_agent codex|cursor
+install_agent() { # install_agent codex|cursor   (run through with_agent_state)
   local a="$1" tmp s dst; tmp="$(mktemp -d)"; agent_rules "$tmp/AGENTS.md"
   echo "== agent: $a"
-  [ "$DRY" = 1 ] || mkdir -p "$STATE" "$(dirname "$CODEX_MD")"
+  [ "$DRY" = 1 ] || mkdir -p "$AGENT_STATE"
   case "$a" in
-    codex) dst="$AGENTS_SKILLS"; insert_block CORE "$tmp/AGENTS.md" "$CODEX_MD" ;;
+    codex) dst="$AGENTS_SKILLS"
+      [ "$DRY" = 1 ] || { mkdir -p "$(dirname "$CODEX_MD")"; printf '%s\n' "$CODEX_MD" > "$AGENT_STATE/codex-md"; }
+      insert_block CORE "$tmp/AGENTS.md" "$CODEX_MD" ;;
     cursor) dst="$CURSOR_SKILLS"
       install_tree cursor "$tmp" "$SHARE/rules"
       warn "Cursor has no global rules file: paste $SHARE/rules/AGENTS.md into Settings > Rules, or copy it to a project's AGENTS.md" ;;
@@ -213,11 +219,11 @@ install_agent() { # install_agent codex|cursor
 # ---------------------------------------------------------------- uninstall
 if [ "$UNINSTALL" = 1 ]; then
   echo "== workbench uninstall ($CLAUDE_HOME)"
-  [ -f "$FILES" ] || [ -f "$RECEIPT" ] || fail "nothing recorded for $CLAUDE_HOME: workbench does not look installed there"
+  [ -f "$FILES" ] || [ -f "$RECEIPT" ] || [ -f "$AFILES" ] || fail "nothing recorded for $CLAUDE_HOME: workbench does not look installed there"
   wbpy check "$CLAUDE_HOME/settings.json" "$CLAUDE_HOME/CLAUDE.md" CORE $(upper "$ALL_OPTIONALS")
-  installed=" $(awk -F'\t' '$1=="optional"{print $2}' "$FILES" 2>/dev/null | tr '\n' ' ') "
+  installed=" $(awk -F'\t' '$1=="optional"{print $2}' "$FILES" 2>/dev/null | tr '\n' ' ' || true) "
   targets=""
-  for o in ${OPTIONALS:-$( [ "$AGENTS_GIVEN" = 1 ] || echo "$installed" )}; do
+  for o in ${OPTIONALS:-$( if [ "$AGENTS_GIVEN" = 0 ] || has_agent claude; then echo "$installed"; fi )}; do
     case "$installed" in *" $o "*) targets="$targets $o" ;; *) warn "$o is not installed here: skipped" ;; esac
   done
   for o in $targets; do
@@ -228,11 +234,14 @@ if [ "$UNINSTALL" = 1 ]; then
   done
   for a in codex cursor; do   # other agents: named by --agent, or everything when no flag narrows it
     { { [ "$AGENTS_GIVEN" = 1 ] && has_agent "$a"; } || { [ "$AGENTS_GIVEN" = 0 ] && [ -z "$OPTIONALS" ]; }; } || continue
-    has_component "$a" || { [ "$AGENTS_GIVEN" = 0 ] || warn "$a is not installed here: skipped"; continue; }
+    with_agent_state has_component "$a" || { [ "$AGENTS_GIVEN" = 0 ] || warn "$a is not installed here: skipped"; continue; }
     echo "== agent: $a"
-    if [ "$a" = codex ]; then remove_component codex CORE "$CODEX_MD"; else remove_component cursor; fi
+    if [ "$a" = codex ]; then
+      [ -f "$AGENT_STATE/codex-md" ] && CODEX_MD="$(cat "$AGENT_STATE/codex-md")"   # where install put it (CODEX_HOME may differ now)
+      with_agent_state remove_component codex CORE "$CODEX_MD"
+    else with_agent_state remove_component cursor; fi
   done
-  if { [ "$AGENTS_GIVEN" = 1 ] && has_agent claude; } || { [ "$AGENTS_GIVEN" = 0 ] && [ -z "$OPTIONALS" ]; }; then
+  if [ -z "$OPTIONALS" ] && { [ "$AGENTS_GIVEN" = 0 ] || has_agent claude; }; then
     echo "== core"; remove_component core CORE
     if [ "$DRY" = 0 ]; then
       for d in "$SHARE/mods" "$CLAUDE_HOME/hooks/workbench"; do [ -d "$d" ] && find "$d" -depth -type d -empty -delete; done
@@ -241,7 +250,10 @@ if [ "$UNINSTALL" = 1 ]; then
   fi
   if [ "$DRY" = 0 ]; then   # drop the state once nothing is recorded (an installed agent keeps it)
     if [ -f "$FILES" ] && [ ! -s "$FILES" ]; then rm -f "$FILES"; fi
-    [ -f "$FILES" ] || { rmdir "$STATE" "$SHARE/state" "$SHARE" 2>/dev/null || true; }
+    [ -f "$FILES" ] || rmdir "$STATE" 2>/dev/null || true
+    if [ -f "$AFILES" ] && ! grep -q . "$AFILES"; then rm -f "$AFILES" "$AGENT_STATE/codex-md"; fi
+    [ -f "$AFILES" ] || { rm -f "$AGENT_STATE/codex-md"; rmdir "$AGENT_STATE" 2>/dev/null || true; }
+    rmdir "$SHARE/state" "$SHARE" 2>/dev/null || true
   fi
   echo "== Done. Backups (*.bak-*) were kept. Plugins stay installed: remove with 'claude plugin uninstall <name>'."
   exit 0
@@ -302,7 +314,7 @@ fi
 
 fi   # end of the Claude Code part
 
-for a in codex cursor; do if has_agent "$a"; then install_agent "$a"; fi; done
+for a in codex cursor; do if has_agent "$a"; then with_agent_state install_agent "$a"; fi; done
 
 echo
 echo "== Done. Next steps:"

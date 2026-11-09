@@ -50,7 +50,7 @@ Requirements: Linux or WSL, `git` and `python3`. Claude Code must already be ins
 | Codex | A marked block in `${CODEX_HOME:-~/.codex}/AGENTS.md` | `~/.agents/skills/handoff` |
 | Cursor | No global rules file exists: paste `~/.local/share/workbench/rules/AGENTS.md` into Settings → Rules, or copy it to a project's `AGENTS.md` | `~/.cursor/skills/handoff` |
 
-Cursor also reads `~/.agents/skills`, so with both agents it may list the skill twice. Paths follow each vendor's docs (Codex: AGENTS.md and `.agents/skills`; Cursor: skills, no file-based user rules); neither agent has been run against this installer, only the files it writes are tested. Remove with `./uninstall.sh --agent codex` (or `cursor`). Hermes is not covered yet.
+Cursor also reads `~/.agents/skills`, so with both agents it may list the skill twice. Paths follow each vendor's docs (Codex: AGENTS.md and `.agents/skills`; Cursor: skills, no file-based user rules); neither agent has been run against this installer, only the files it writes are tested. Remove with `./uninstall.sh --agent codex` (or `cursor`). These files are shared by all your Claude config dirs, so one removal applies everywhere; `./uninstall.sh --agent claude` also removes the optionals. Hermes is not covered yet.
 
 ## How it installs
 
