@@ -13,7 +13,7 @@ in one folder per source (<name>-<hash of its path>), never overwrite a file (a 
 to the old copy as <name>.<date><ext>; an unchanged one is skipped), and redact secret-looking strings in
 every text file they write. Ingesting what was collected is a separate step (CLAUDE.md, Ingest).
 """
-import argparse, datetime, hashlib, json, os, re, subprocess, sys
+import argparse, bisect, datetime, hashlib, json, os, re, subprocess, sys
 from pathlib import Path
 
 VAULT = Path(__file__).resolve().parent.parent
@@ -30,7 +30,10 @@ MAX_BINARY = 20_000_000       # bytes; bigger PDFs/Office files are skipped
 MAX_REPO_FILES = 300
 MAX_FOLDER_FILES = 500
 MAX_TURN = 4000               # characters kept per session turn
-KEYWORD = r"(?:api[_-]?key|secret|token|passw(?:or)?d|credential)\w*"
+# keyword + a short list of suffixes: catches DB_PASSWORD, client_secret, aws_secret_access_key, access_token,
+# not tokenizer, tokens, token_count or password_hash (and no open-ended \w*, which is quadratic)
+KEYWORD = r"(?:api[_-]?key|secret(?:[_-]?(?:access[_-]?)?key)?|token|passw(?:or)?d|credential)(?:_?(?:key|value|secret))?\b"
+PEM = r"-----BEGIN [A-Z ]*PRIVATE KEY(?: BLOCK)?-----"
 
 
 def _with_digit(m):
@@ -38,8 +41,6 @@ def _with_digit(m):
 
 
 SECRETS = [
-    (re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY(?: BLOCK)?-----.*?"
-                r"(?:-----END [A-Z ]*PRIVATE KEY(?: BLOCK)?-----|\Z)", re.S), "[REDACTED]"),
     (re.compile(r"\b(?:AKIA|ASIA)[0-9A-Z]{16}\b"), "[REDACTED]"),
     (re.compile(r"\b(?:sk|pk|rk)[-_][A-Za-z0-9_-]{20,300}"), _with_digit),
     (re.compile(r"\b(?:gh[pousr]_[A-Za-z0-9]{30,}|github_pat_[A-Za-z0-9_]{30,})"), "[REDACTED]"),
@@ -53,14 +54,42 @@ SECRETS = [
     (re.compile(r"(://)[^/\s:@]+:[^/\s@]+(@)"), r"\1[REDACTED]\2"),       # user:password@host
     (re.compile(r"(://)[^/\s:@]{20,}(@)"), r"\1[REDACTED]\2"),            # token@host
     (re.compile(r"(?i)(" + KEYWORD + r"[\"']?\s*[:=]\s*)([\"'])[^\"'\n]{1,200}\2"), r"\1\2[REDACTED]\2"),
-    (re.compile(r"(?i)(" + KEYWORD + r"[\"']?\s*[:=]\s*[\"']?)[^\s\"',;]{8,}"), r"\1[REDACTED]"),
+    (re.compile(r"(?i)(" + KEYWORD + r"[\"']?\s*[:=]\s*[\"']?)[^\s\"',;()<>\[\]{}]{8,}"), r"\1[REDACTED]"),
 ]
 NOISE = re.compile(r"<(system-reminder|task-notification|local-command-stdout|local-command-stderr|"
                    r"local-command-caveat|command-message|bash-input|bash-stdout|bash-stderr|"
                    r"user-prompt-submit-hook)>.*?</\1>", re.S)
 
 
+PEM_BEGIN = re.compile(PEM)
+PEM_END = re.compile(r"-----END [A-Z ]*PRIVATE KEY(?: BLOCK)?-----")
+PEM_BODY = re.compile(r"(?:[ \t]*\r?\n(?:[\w-]+: [^\n]*|[A-Za-z0-9+/=]{16,}))+")
+
+
+def redact_pem(text):
+    """A private key block -> [REDACTED]: up to its END marker (within 20k chars), or, when the END is
+    missing (cut or partial), over the header and base64 lines only. Linear: END positions are found once."""
+    ends = list(PEM_END.finditer(text))
+    end_starts = [e.start() for e in ends]
+    out, pos = [], 0
+    for m in PEM_BEGIN.finditer(text):
+        if m.start() < pos:
+            continue
+        i = bisect.bisect_left(end_starts, m.end())
+        if i < len(ends) and ends[i].start() - m.end() <= 20000:
+            stop = ends[i].end()
+        else:
+            body = PEM_BODY.match(text, m.end())
+            if not body:
+                continue   # a header mentioned in prose, no key material after it
+            stop = body.end()
+        out += [text[pos:m.start()], "[REDACTED]"]
+        pos = stop
+    return "".join(out) + text[pos:]
+
+
 def redact(text):
+    text = redact_pem(text)
     for pattern, repl in SECRETS:
         text = pattern.sub(repl, text)
     return text
@@ -104,7 +133,14 @@ class Writer:
         self.unredacted += not text
         if not self.dry:
             dest.parent.mkdir(parents=True, exist_ok=True)
-            dest.write_bytes(data)
+            try:   # O_EXCL: never replace, and never follow a symlink planted at dest
+                fd = os.open(dest, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0), 0o644)
+            except FileExistsError:
+                self.n["written"] -= 1
+                self.skip(str(dest), "a file or symlink is already there")
+                return
+            with os.fdopen(fd, "wb") as fh:
+                fh.write(data)
 
     def skip(self, what, why):
         self.skipped.append(f"skipped  {what}  ({why})")
@@ -301,7 +337,7 @@ def cmd_repo(a):
                    f"over {MAX_REPO_FILES} per repo; decisions, top-level files and READMEs were kept first")
         for f in files[:MAX_REPO_FILES]:
             src = repo / f
-            if not src.is_file() or src.is_symlink() or not src.resolve().is_relative_to(repo):
+            if not src.is_file() or src.is_symlink() or not src.resolve().is_relative_to(repo) or inside_vault(src):
                 continue
             if src.stat().st_size > MAX_TEXT:
                 w.skip(f"{repo.name}/{f}", "larger than 1 MB")

@@ -173,11 +173,16 @@ D="$W/notes"; mkdir -p "$D/sub"; echo '# Note' > "$D/sub/note.md"; printf '%%PDF
 v="$(rnd Zq9 8)"
 { echo "DB_PASSWORD=$v"; echo "aws_secret_access_key = $v"; echo "client_secret: $v"; echo "sk_live_$v"
   echo "Authorization: Bearer $v"; echo "{\"password\": \"correct horse $v\"}"; echo "https://glpat-$v@gitlab.example/x.git"; echo "https://hooks.chat.example/services/T0/B0/$v"
-  echo "keep this line"; } > "$D/secrets.md"
+  echo "keep this line"; echo 'tokenizer = AutoTokenizer.from_pretrained("bert")'; echo "token_count = len(ids)"
+  echo "If your key starts with $pem convert it."; echo "keep after the header"; } > "$D/secrets.md"
 t "files exits 0 and warns about unredacted binaries" "$CO files '$D' | grep -q 'copied as is'"
 N="$(echo "$V"/raw/docs/work-notes-*)"
 t "files: docs and PDF copied, hidden and other files not" "[ -f '$N/sub/note.md' ] && [ -f '$N/a.pdf' ] && [ ! -e '$N/.hidden.md' ] && [ ! -e '$N/x.env' ]"
 t "common secret formats redacted (env, Bearer, Stripe, JSON with spaces, URL token, webhook)" "! grep -q '$v' '$N/secrets.md' && [ \$(grep -c REDACTED '$N/secrets.md') = 8 ] && grep -q 'keep this line' '$N/secrets.md'"
+t "code and a key header in prose survive redaction" "grep -qF 'tokenizer = AutoTokenizer.from_pretrained(\"bert\")' '$N/secrets.md' && grep -q 'token_count = len(ids)' '$N/secrets.md' && grep -q 'keep after the header' '$N/secrets.md'"
+mkdir -p "$W/sym"; echo '# m' > "$W/sym/m.md"; SL="$V/raw/docs/$(basename "$W")-sym-$(printf '%s' "$(realpath "$W/sym")" | sha1sum | cut -c1-6)"
+mkdir -p "$SL"; ln -s "$T/outside.md" "$SL/m.md"; $CO files "$W/sym" >/dev/null 2>&1
+t "a dangling symlink planted in raw/ is never followed" "[ ! -e '$T/outside.md' ] && [ -L '$SL/m.md' ] && [ \$(ls -d \"$V\"/raw/docs/*-sym-* | wc -l) = 1 ]"
 t "files refuses a folder inside the vault" "$CO files '$V/wiki' | grep -q 'already inside the vault'"
 echo '# top' > "$HOME/top.md"; $CO files "$HOME" >/dev/null 2>&1
 t "files on a folder that contains the vault skips the vault" "[ -n \"\$(ls \"$V\"/raw/docs/*/top.md 2>/dev/null)\" ] && ! ls -d \"$V\"/raw/docs/*/vault 2>/dev/null | grep -q ."
