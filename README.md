@@ -35,7 +35,7 @@ Requirements: Linux or WSL, `git` and `python3`. Claude Code must already be ins
 
 | Name | What it does |
 |---|---|
-| `vault` | A second brain (LLM wiki, Karpathy model). Drop sources in `raw/` and Claude builds linked pages in `wiki/`, then answers from them. [Details](optional/vault/README.md) |
+| `vault` | A second brain (LLM wiki, Karpathy model). Drop sources in `raw/` and Claude builds linked pages in `wiki/`, then answers from them. "Bootstrap my vault" fills it through a short guided interview from your repos, Claude Code sessions, decisions and docs. [Details](optional/vault/README.md) |
 | `accounts` | Several Claude accounts with one shared config: `claude-account add work` gives you `claude-work`. [Details](optional/accounts/README.md) |
 | `wsl` | A Windows toast when a session needs you (falls back to `notify-send` on Linux), plus `import-from-windows` to copy files from Downloads without secrets. [Details](optional/wsl/README.md) |
 | `briefing` | A morning summary from your git repos and handoffs, run through `claude -p` with built-in tools, MCP servers and customizations disabled. Opt-in cron, and it costs tokens per run. [Details](optional/briefing/README.md) |

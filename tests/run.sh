@@ -117,6 +117,77 @@ t "upgrade: no backup of our own previous copy" "! ls '$C/skills/work-mode/' | g
 bash "$T/wb2/uninstall.sh" >/dev/null 2>&1
 t "upgrade then uninstall removes the file (no stale copy restored)" "[ ! -e '$W' ]"
 
+echo "== vault bootstrap (collect.py)"
+fresh collect; V="$HOME/vault"; bash "$WB/optional/vault/setup.sh" --path "$V" >/dev/null 2>&1
+CO="python3 -I $V/tools/collect.py"; W="$T/work"; R="$W/repo-x"; mkdir -p "$R/docs/decisions" "$R/src" "$R/sub"
+rnd() { printf "$1%.0s" $(seq "$2"); }   # secret-looking values are built at runtime: no literal lands in this file
+tok="ghp_$(rnd A 36)"
+printf '# Repo X\nsee %s\n' "$tok" > "$R/README.md"; echo '# 1. Use X' > "$R/docs/decisions/0001-x.md"
+echo 'print(1)' > "$R/src/code.py"; echo 'flask' > "$R/requirements.txt"; echo '# Sub' > "$R/sub/README.md"
+git -C "$R" init -q && git -C "$R" add . && git -C "$R" -c user.name=t -c user.email=t@t commit -qm "first commit"
+vsnap() { (cd "$V" && find . -type f -print0 | sort -z | xargs -0 sha1sum); }
+t "bootstrap.md installed with the vault path" "grep -q '$V/tools/collect.py' '$C/skills/vault/bootstrap.md'"
+vsnap > "$T/v0"; $CO repo "$R" --dry-run >/dev/null 2>&1; vsnap > "$T/v1"
+t "repo --dry-run writes nothing" "cmp -s '$T/v0' '$T/v1'"
+t "repo exits 0" "$CO repo '$R'"
+X="$(echo "$V"/raw/repos/repo-x-*)"
+t "repo: READMEs, decisions and git log collected" "[ -f '$X/README.md' ] && [ -f '$X/sub/README.md' ] && [ -f '$X/docs/decisions/0001-x.md' ] && grep -q 'first commit' '$X/git-log.md'"
+t "repo: code and requirements.txt not collected" "[ ! -e '$X/src' ] && [ ! -e '$X/requirements.txt' ]"
+t "token redacted in the copy, source untouched" "grep -q 'see \[REDACTED\]' '$X/README.md' && ! grep -q '$tok' '$X/README.md' && grep -q '$tok' '$R/README.md'"
+vsnap > "$T/v2"; COLLECT_TODAY=2030-01-01 $CO repo "$R" >/dev/null 2>&1; vsnap > "$T/v3"
+t "repo: a later run with no changes writes nothing (git log included)" "cmp -s '$T/v2' '$T/v3'"
+echo 'more' >> "$R/README.md"; cp "$X/README.md" "$T/readme.before"; COLLECT_TODAY=2030-01-02 $CO repo "$R" >/dev/null 2>&1
+t "changed source lands as a dated copy, old copy untouched" "[ -f '$X/README.2030-01-02.md' ] && cmp -s '$X/README.md' '$T/readme.before'"
+vsnap > "$T/v4"; COLLECT_TODAY=2030-01-03 $CO repo "$R" >/dev/null 2>&1; vsnap > "$T/v5"
+t "...and is not copied again on the next day" "cmp -s '$T/v4' '$T/v5'"
+
+git -C "$V" init -q
+t "discover does not list the vault as a repo" "$CO discover --root '$HOME' --root '$W' > '$T/disc' && grep -q '$R' '$T/disc' && ! grep -q \"  $V\\\$\" '$T/disc' && ! grep -q \"  $V  \" '$T/disc'"
+t "repo refuses the vault itself" "$CO repo '$V' | grep -q 'the vault itself'"
+
+P="$W/proj"; mkdir -p "$P"; PD="$C/projects/$(realpath "$P" | sed 's/[^A-Za-z0-9]/-/g')"; mkdir -p "$PD"
+J() { printf '%s\n' "$1" >> "$PD/s1234567-aaaa.jsonl"; }
+J '{"type":"custom-title","customTitle":"Pick a queue"}'
+J "{\"type\":\"user\",\"cwd\":\"$P\",\"sessionId\":\"s1234567-aaaa\",\"gitBranch\":\"main\",\"timestamp\":\"2026-01-02T10:00:00Z\",\"message\":{\"role\":\"user\",\"content\":\"Which queue should we use?<system-reminder>HIDDEN-REMINDER</system-reminder>\"}}"
+J '{"type":"assistant","timestamp":"2026-01-02T10:00:05Z","message":{"role":"assistant","content":[{"type":"thinking","thinking":"HIDDEN-THINKING"},{"type":"text","text":"Use SQS."},{"type":"tool_use","name":"Bash","input":{"command":"ls"}}]}}'
+J '{"type":"user","timestamp":"2026-01-02T10:00:06Z","message":{"role":"user","content":[{"type":"tool_result","content":"HIDDEN-TOOL-OUTPUT"}]}}'
+J '{"type":"user","isSidechain":true,"message":{"role":"user","content":"HIDDEN-SUBAGENT"}}'
+J '{"type":"user","isMeta":true,"message":{"role":"user","content":"HIDDEN-META"}}'
+J '{"type":"user","isCompactSummary":true,"message":{"role":"user","content":"HIDDEN-SUMMARY"}}'
+J '{"type":"user","message":{"role":"user","content":"<bash-input>env</bash-input><bash-stdout>HIDDEN-ENV</bash-stdout>"}}'
+J '[1,2]'; J '{"type":"user","message":"HIDDEN-NOT-A-DICT"}'; J '{"type":"assistant","message":{"content":[{"type":"text","text":null}]}}'
+pem="$(printf -- '-----BEGIN OPENSSH PRIVATE %s-----' KEY)"
+python3 -I -c 'import json,sys; print(json.dumps({"type":"user","message":{"role":"user","content":"x"*3990+"\n"+sys.argv[1]+"\n"+"\n".join(["KEYBODY"+"Q"*60]*80)+"\n"}}))' "$pem" >> "$PD/s1234567-aaaa.jsonl"
+printf '%s\n' '{"type":"user","isMeta":true,"message":{"role":"user","content":"only meta"}}' > "$PD/empty000-bbbb.jsonl"
+t "sessions skips transcripts written in the last hour by default" "$CO sessions '$P' --days 0 | grep -q 'active in the last 60 min'"
+t "sessions exits 0 on malformed lines" "$CO sessions '$P' --days 0 --skip-recent 0"
+S1="$(echo "$V"/raw/sessions/proj-*/2026-01-02-s1234567.md)"
+t "session: title, user and Claude words, tool names" "grep -q '^# Session: Pick a queue' '$S1' && grep -q 'Which queue should we use?' '$S1' && grep -q 'Use SQS.' '$S1' && grep -q '_tools: Bash_' '$S1'"
+t "session: no reminders, thinking, tool output, subagents, meta, summaries or shell output" "! grep -q HIDDEN '$S1'"
+t "session: a key cut by the turn limit is still redacted" "! grep -q KEYBODY '$S1' && grep -q 'characters cut' '$S1'"
+t "session without user messages skipped" "[ \$(ls \"\$(dirname '$S1')\" | wc -l) = 1 ]"
+t "history path from discover is accepted" "$CO sessions '$PD' --days 0 --skip-recent 0 | grep -q 'unchanged: 1'"
+t "unknown project path reported, not fatal" "$CO sessions '$W/nope' | grep -q 'no Claude Code session history'"
+
+D="$W/notes"; mkdir -p "$D/sub"; echo '# Note' > "$D/sub/note.md"; printf '%%PDF-1.4 fake' > "$D/a.pdf"; echo x > "$D/.hidden.md"; echo K=V > "$D/x.env"
+v="$(rnd Zq9 8)"
+{ echo "DB_PASSWORD=$v"; echo "aws_secret_access_key = $v"; echo "client_secret: $v"; echo "sk_live_$v"
+  echo "Authorization: Bearer $v"; echo "{\"password\": \"correct horse $v\"}"; echo "https://glpat-$v@gitlab.example/x.git"; echo "https://hooks.chat.example/services/T0/B0/$v"
+  echo "keep this line"; } > "$D/secrets.md"
+t "files exits 0 and warns about unredacted binaries" "$CO files '$D' | grep -q 'copied as is'"
+N="$(echo "$V"/raw/docs/work-notes-*)"
+t "files: docs and PDF copied, hidden and other files not" "[ -f '$N/sub/note.md' ] && [ -f '$N/a.pdf' ] && [ ! -e '$N/.hidden.md' ] && [ ! -e '$N/x.env' ]"
+t "common secret formats redacted (env, Bearer, Stripe, JSON with spaces, URL token, webhook)" "! grep -q '$v' '$N/secrets.md' && [ \$(grep -c REDACTED '$N/secrets.md') = 8 ] && grep -q 'keep this line' '$N/secrets.md'"
+t "files refuses a folder inside the vault" "$CO files '$V/wiki' | grep -q 'already inside the vault'"
+echo '# top' > "$HOME/top.md"; $CO files "$HOME" >/dev/null 2>&1
+t "files on a folder that contains the vault skips the vault" "[ -n \"\$(ls \"$V\"/raw/docs/*/top.md 2>/dev/null)\" ] && ! ls -d \"$V\"/raw/docs/*/vault 2>/dev/null | grep -q ."
+mkdir -p "$W/a/decisions" "$W/b/decisions"; echo A > "$W/a/decisions/0001.md"; echo B > "$W/b/decisions/0001.md"
+$CO files "$W/a/decisions" "$W/b/decisions" >/dev/null 2>&1
+t "two folders with the same name never mix" "[ \$(ls -d \"$V\"/raw/docs/*-decisions-* | wc -l) = 2 ] && ! ls \"$V\"/raw/docs/*-decisions-*/ | grep -q '0001\\.2'"
+t "collected files show up as pending" "python3 -I '$V/tools/vault.py' pending > '$T/pend'; grep -q 'raw/sessions/proj-.*/2026-01-02-s1234567.md' '$T/pend'"
+$CO discover --root "$W" > "$T/disc2" 2>&1
+t "discover lists the project history and the decision folder with its repo" "grep -q 'history: $PD' '$T/disc2' && grep -q 'docs/decisions  (in repo $R)' '$T/disc2'"
+
 echo "== panels (lean HUD)"
 fresh panels; printf '{"omcHud":{"elements":{"contextBar":true}}}\n' > "$C/settings.json"; cp "$C/settings.json" "$T/panels.orig"
 I --all

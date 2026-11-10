@@ -19,6 +19,8 @@ operate on the same vault without conflict. Obsidian is optional: everything is 
 | `wiki/log.md` | Claude | Append-only record of every operation (narrative). |
 | `manifest.tsv` | Claude | What was already ingested: `sha256 · path · date`, one `raw/` file per line. Written only by `tools/vault.py register`. |
 | `tools/vault.py` | Claude | `pending` (what is left to ingest), `register`, `lint`. Standard library only. |
+| `raw/repos/`, `raw/sessions/`, `raw/docs/` | Claude | Snapshots written by `tools/collect.py` from repos, Claude Code sessions and doc folders (secret-looking strings redacted). One folder per source (`<name>-<hash>`). Same rule as `raw/`; a changed source arrives as a new `<name>.<date>` file. |
+| `tools/collect.py` | Claude | `discover` (candidates, writes nothing), `repo`, `sessions`, `files`. Used by the guided bootstrap (skill `vault`, `bootstrap.md`). |
 | `raw/web/` | user | Web Clipper destination (template `tools/web-clipper-raw-web.json`). Same rule as `raw/`. |
 | `inbox/` | user | Quick notes (default folder for new notes, template `templates/note.md`). Ingesting = moving to `raw/notes/` untouched, then ingesting from there. |
 | `home.md`, `dashboard.base` | Claude | Landing page and Bases views (recent, to review, by type, sources, aging). Not sources. |
@@ -39,7 +41,7 @@ Edit this starter list to fit your life; keep the two in sync.
 | `method` | How to work | _(grow as needed)_ |
 | `tech` | Tools and infrastructure | _(grow as needed)_ |
 | `personal` | Personal life and projects | _(grow as needed)_ |
-| `source` | Origin of a `source` page | `web`, `note`, `book`, `video`, `paper` |
+| `source` | Origin of a `source` page | `web`, `note`, `book`, `video`, `paper`, `repo`, `session`, `doc` |
 
 ## Page format
 
@@ -67,7 +69,9 @@ Body: 1-3 sentence summary at the top, then sections. A `source` page ends with 
 1. Target = the file named by the user, or the output of `python3 tools/vault.py pending` (new = not ingested; CHANGED = someone touched `raw/`: warn the user, do not ingest).
 2. Read the whole source (PDF/DOCX/PPTX/XLSX: use the matching skills; public video: `yt-dlp` for subtitles).
 3. Read `wiki/index.md` and the related pages **before** writing. Look for duplicates by title **and** aliases.
-4. Write `wiki/sources/<slug>.md`.
+4. Write `wiki/sources/<slug>.md`. For a `raw/sessions/` transcript keep it short: decisions, problems and their fixes,
+   open questions, people and tools involved; skip chit-chat. A collected `<name>.<date>.<ext>` file is a newer
+   version of `<name>.<ext>`: update that source page (and point `raw:` to the new file) instead of creating another.
 5. Update/create the entity/concept pages touched (typically 5-15). Updating > creating a duplicate.
    A page with `reviewed: true`: do not rewrite it, only append to `## Pending updates` for the user to approve.
 6. Contradiction with what already exists: do not overwrite; record it under `## Divergences`, citing both sources.
