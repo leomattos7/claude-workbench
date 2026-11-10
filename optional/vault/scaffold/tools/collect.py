@@ -42,7 +42,8 @@ def _with_digit(m):
 
 SECRETS = [
     (re.compile(r"\b(?:AKIA|ASIA)[0-9A-Z]{16}\b"), "[REDACTED]"),
-    (re.compile(r"\b(?:sk|pk|rk)[-_][A-Za-z0-9_-]{20,300}"), _with_digit),
+    (re.compile(r"\b(?:sk|pk|rk)_(?:live|test)_[A-Za-z0-9]{10,300}"), "[REDACTED]"),   # Stripe
+    (re.compile(r"\bsk-[A-Za-z0-9_-]{20,300}"), _with_digit),                       # sk-... API keys
     (re.compile(r"\b(?:gh[pousr]_[A-Za-z0-9]{30,}|github_pat_[A-Za-z0-9_]{30,})"), "[REDACTED]"),
     (re.compile(r"\b(?:glpat-[\w-]{20,}|hf_[A-Za-z0-9]{30,}|npm_[A-Za-z0-9]{36})"), "[REDACTED]"),
     (re.compile(r"\b(?:xox[abprs]|xapp)-[A-Za-z0-9-]{10,}"), "[REDACTED]"),
