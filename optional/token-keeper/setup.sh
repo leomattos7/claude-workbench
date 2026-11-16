@@ -5,7 +5,8 @@ set -euo pipefail
 
 REPO="leomattos7/claude-token-keeper"; REF="v0.1.1"   # pin; raise it after reading the new release
 MARKET="claude-token-keeper"; PLUGIN="token-keeper@$MARKET"
-STATE="${STATE:-$HOME/.local/share/workbench/state/manual}"; MARK="$STATE/token-keeper-marketplace"   # present = this setup added the marketplace
+STATE="${STATE:-$HOME/.local/share/workbench/state/manual}"
+MARK="$STATE/token-keeper-marketplace"; MARK_PLUGIN="$STATE/token-keeper-plugin"   # present = this setup added the marketplace / installed the plugin
 dry=0; uninstall=0; plugins=1
 for a in "$@"; do
   case "$a" in
@@ -21,7 +22,12 @@ run() { say "$*"; [ "$dry" = 1 ] || "$@"; }
 
 if [ "$uninstall" = 1 ]; then
   command -v claude >/dev/null || { echo "  claude not found: remove it yourself with: claude plugin uninstall $PLUGIN" >&2; exit 0; }
-  run claude plugin uninstall "$PLUGIN" --scope user || echo "  could not uninstall $PLUGIN (already gone?)" >&2
+  if [ -f "$MARK_PLUGIN" ]; then
+    run claude plugin uninstall "$PLUGIN" --scope user || echo "  could not uninstall $PLUGIN (already gone?)" >&2
+    [ "$dry" = 1 ] || rm -f "$MARK_PLUGIN"
+  else
+    echo "  plugin $PLUGIN was not installed by this setup: kept"
+  fi
   if [ -f "$MARK" ]; then
     run claude plugin marketplace remove "$MARKET" || echo "  could not remove marketplace $MARKET" >&2
     [ "$dry" = 1 ] || rm -f "$MARK"
@@ -51,4 +57,10 @@ elif run claude plugin marketplace add "$REPO@$REF"; then
 else
   echo "  could not add marketplace $REPO@$REF (retry: claude plugin marketplace add $REPO@$REF)" >&2; exit 0
 fi
-run claude plugin install "$PLUGIN" --scope user || echo "  could not install $PLUGIN (retry: claude plugin install $PLUGIN --scope user)" >&2
+if [ "$dry" = 0 ] && claude plugin list 2>/dev/null | grep -qF "$PLUGIN"; then
+  echo "  plugin $PLUGIN already installed: left as is"
+elif run claude plugin install "$PLUGIN" --scope user; then
+  [ "$dry" = 1 ] || { mkdir -p "$STATE"; : > "$MARK_PLUGIN"; }
+else
+  echo "  could not install $PLUGIN (retry: claude plugin install $PLUGIN --scope user)" >&2
+fi

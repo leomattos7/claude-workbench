@@ -20,7 +20,8 @@ claude plugin install token-keeper@claude-token-keeper --scope user
   `accounts` to `current` in `/plugin`.
 - Run `/token-keeper` in a session to see when each login expires; `/token-keeper now` forces a refresh.
 - If a marketplace named `claude-token-keeper` is already configured, it is left as is (and not removed on uninstall).
-- `./uninstall.sh --with token-keeper` runs `claude plugin uninstall token-keeper@claude-token-keeper` and removes the
-  marketplace only if this setup added it (recorded in workbench's state dir).
+- If the plugin is already installed, it is left as is too. `./uninstall.sh --with token-keeper` runs
+  `claude plugin uninstall token-keeper@claude-token-keeper` only if this setup installed it, and removes the
+  marketplace only if this setup added it (both recorded in workbench's state dir).
 - `--dry-run` prints the commands and runs nothing. With `--no-plugins` nothing is installed and the commands to run
   yourself are printed.
