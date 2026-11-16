@@ -3,8 +3,8 @@
 #
 # Usage:
 #   ./install.sh                          core only
-#   ./install.sh --with vault,wsl         core + chosen optionals (vault, accounts, wsl, briefing, panels)
-#   ./install.sh --all                    core + every optional except panels (opt-in by name)
+#   ./install.sh --with vault,wsl         core + chosen optionals (vault, accounts, wsl, briefing, panels, token-keeper)
+#   ./install.sh --all                    core + every optional except panels and token-keeper (opt-in by name)
 #   ./install.sh --agent claude,codex     which agents to install for (claude, codex, cursor; default: claude)
 #   ./install.sh --dry-run [...]          show what would happen, change nothing
 #   ./install.sh --no-plugins [...]       skip the marketplace plugins (and do not enable them)
@@ -28,7 +28,7 @@ RECEIPT="$STATE/receipt.json"; FILES="$STATE/files.tsv"
 AGENT_STATE="$SHARE/state/agents"; AFILES="$AGENT_STATE/files.tsv"   # Codex/Cursor files are shared by every Claude config dir
 WB_STAMP="$(date +%Y%m%d%H%M%S)"
 ALL_OPTIONALS="vault accounts wsl briefing"   # what --all installs
-KNOWN_OPTIONALS="$ALL_OPTIONALS panels"       # panels removes HUD items, so it is never implied by --all
+KNOWN_OPTIONALS="$ALL_OPTIONALS panels token-keeper"   # panels removes HUD items and token-keeper rewrites credential files: never implied by --all
 OPTIONALS=""; DRY=0; PLUGINS=1; UNINSTALL=0; VAULT_PATH="$HOME/vault"
 MIN_MODS_VERSION="2.1.287"
 AGENTS="claude"; AGENTS_GIVEN=0; KNOWN_AGENTS="claude codex cursor"
@@ -300,13 +300,14 @@ for o in $OPTIONALS; do install_optional "$o"; done
 
 if [ "$PLUGINS" = 1 ]; then
   echo "== Plugins (user scope, from their marketplaces)"
-  for m in "https://github.com/Yeachan-Heo/oh-my-claudecode.git#v5.7.31" \
-           anthropics/claude-plugins-official \
-           forrestchang/andrej-karpathy-skills; do
+  MARKETS=("https://github.com/Yeachan-Heo/oh-my-claudecode.git#v5.7.31" anthropics/claude-plugins-official forrestchang/andrej-karpathy-skills)
+  PLUGS=(oh-my-claudecode@omc mattpocock-skills@claude-plugins-official andrej-karpathy-skills@karpathy-skills)
+  case " $OPTIONALS " in *" token-keeper "*) MARKETS+=(leomattos7/claude-token-keeper); PLUGS+=(token-keeper@claude-token-keeper) ;; esac
+  for m in "${MARKETS[@]}"; do
     if dry "claude plugin marketplace add $m"; then continue; fi
     claude plugin marketplace add "$m" >/dev/null 2>&1 && ok "marketplace $m" || warn "marketplace $m: failed or already added"
   done
-  for p in oh-my-claudecode@omc mattpocock-skills@claude-plugins-official andrej-karpathy-skills@karpathy-skills; do
+  for p in "${PLUGS[@]}"; do
     if dry "claude plugin install $p --scope user"; then continue; fi
     claude plugin install "$p" --scope user >/dev/null 2>&1 && ok "$p" || warn "failed: $p (retry: claude plugin install $p --scope user)"
   done

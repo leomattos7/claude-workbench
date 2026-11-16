@@ -1,0 +1,13 @@
+{
+  "enabledPlugins": {
+    "token-keeper@claude-token-keeper": true
+  },
+  "extraKnownMarketplaces": {
+    "claude-token-keeper": {
+      "source": {
+        "source": "github",
+        "repo": "leomattos7/claude-token-keeper"
+      }
+    }
+  }
+}
