@@ -40,7 +40,7 @@ Requirements: Linux or WSL, `git` and `python3`. Claude Code must already be ins
 | `wsl` | A Windows toast when a session needs you (falls back to `notify-send` on Linux), plus `import-from-windows` to copy files from Downloads without secrets. [Details](optional/wsl/README.md) |
 | `briefing` | A morning summary from your git repos and handoffs, run through `claude -p` with built-in tools, MCP servers and customizations disabled. Opt-in cron, and it costs tokens per run. [Details](optional/briefing/README.md) |
 | `panels` | A lean status line: turns off the HUD's context and quota items so they are not shown twice next to the `context-bar` and `orca-quota` panels. Opt-in by name (not in `--all`); the panels are third-party and installed by you. [Details](optional/panels/README.md) |
-| `token-keeper` | Keeps the OAuth login of your Claude config dirs fresh while any session is open, so a rarely used account is not logged out. Pairs with `accounts`. Opt-in by name (not in `--all`): the mod rewrites `.credentials.json` files. Adds the plugin from [leomattos7/claude-token-keeper](https://github.com/leomattos7/claude-token-keeper). [Details](optional/token-keeper/README.md) |
+| `token-keeper` | Keeps the OAuth login of your Claude config dirs fresh while any session is open, so a rarely used account is not logged out. Pairs with `accounts`. Opt-in by name (not in `--all`): the mod rewrites `.credentials.json` files. Installs the plugin from [leomattos7/claude-token-keeper](https://github.com/leomattos7/claude-token-keeper), pinned to a tag, through the `claude` CLI. [Details](optional/token-keeper/README.md) |
 
 ## Other agents (Codex, Cursor)
 

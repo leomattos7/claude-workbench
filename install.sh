@@ -36,7 +36,7 @@ CODEX_MD="${CODEX_HOME:-$HOME/.codex}/AGENTS.md"   # Codex global instructions
 AGENTS_SKILLS="$HOME/.agents/skills"              # Codex user skills (Cursor reads it too)
 CURSOR_SKILLS="$HOME/.cursor/skills"              # Cursor user skills (the CLI reads this one reliably)
 PORTABLE_SKILLS="handoff"                         # work-mode and parallel-delegation lean on OMC and Claude Code tools
-export CLAUDE_HOME WB_STAMP
+export CLAUDE_HOME WB_STAMP STATE
 
 need() { [ -n "${2:-}" ] || { echo "$1 needs a value (see --help)" >&2; exit 1; }; }
 while [ $# -gt 0 ]; do
@@ -150,7 +150,7 @@ insert_block() { # insert_block <NAME> <block-file> [target.md]  (default: CLAUD
   rm -f "$tmp"
 }
 
-optional_args() { OPT_ARGS=(); case "$1" in vault) OPT_ARGS=(--path "$VAULT_PATH") ;; esac; }
+optional_args() { OPT_ARGS=(); case "$1" in vault) OPT_ARGS=(--path "$VAULT_PATH") ;; token-keeper) [ "$PLUGINS" = 1 ] || OPT_ARGS=(--no-plugins) ;; esac; }
 # remember the vault path so uninstall compares against the same rendered skill
 if [ "$VAULT_PATH" = "$HOME/vault" ] && [ -f "$STATE/vault-path" ] && [ "$UNINSTALL" = 1 ]; then VAULT_PATH="$(cat "$STATE/vault-path")"; fi
 
@@ -300,14 +300,13 @@ for o in $OPTIONALS; do install_optional "$o"; done
 
 if [ "$PLUGINS" = 1 ]; then
   echo "== Plugins (user scope, from their marketplaces)"
-  MARKETS=("https://github.com/Yeachan-Heo/oh-my-claudecode.git#v5.7.31" anthropics/claude-plugins-official forrestchang/andrej-karpathy-skills)
-  PLUGS=(oh-my-claudecode@omc mattpocock-skills@claude-plugins-official andrej-karpathy-skills@karpathy-skills)
-  case " $OPTIONALS " in *" token-keeper "*) MARKETS+=(leomattos7/claude-token-keeper); PLUGS+=(token-keeper@claude-token-keeper) ;; esac
-  for m in "${MARKETS[@]}"; do
+  for m in "https://github.com/Yeachan-Heo/oh-my-claudecode.git#v5.7.31" \
+           anthropics/claude-plugins-official \
+           forrestchang/andrej-karpathy-skills; do
     if dry "claude plugin marketplace add $m"; then continue; fi
     claude plugin marketplace add "$m" >/dev/null 2>&1 && ok "marketplace $m" || warn "marketplace $m: failed or already added"
   done
-  for p in "${PLUGS[@]}"; do
+  for p in oh-my-claudecode@omc mattpocock-skills@claude-plugins-official andrej-karpathy-skills@karpathy-skills; do
     if dry "claude plugin install $p --scope user"; then continue; fi
     claude plugin install "$p" --scope user >/dev/null 2>&1 && ok "$p" || warn "failed: $p (retry: claude plugin install $p --scope user)"
   done

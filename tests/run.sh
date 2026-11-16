@@ -211,32 +211,35 @@ echo "== token-keeper (plugin optional, opt-in; fake claude CLI, no network)"
 FAKEC="$T/fakeclaude"; mkdir -p "$FAKEC"; export CLAUDE_LOG="$T/claude.log"
 cat > "$FAKEC/claude" <<'SH'
 #!/usr/bin/env bash
-if [ "${1:-}" = --version ]; then echo "2.1.325 (Claude Code)"; else echo "$*" >> "$CLAUDE_LOG"; fi
+# fake claude: logs arguments and remembers whether the token-keeper marketplace is configured
+case "$*" in
+  --version) echo "2.1.325 (Claude Code)"; exit 0 ;;
+  "plugin marketplace list") [ -f "$CLAUDE_LOG.mk" ] && echo "  ❯ claude-token-keeper"; exit 0 ;;
+  "plugin marketplace add "*token-keeper*) touch "$CLAUDE_LOG.mk" ;;
+  "plugin marketplace remove claude-token-keeper") rm -f "$CLAUDE_LOG.mk" ;;
+esac
+echo "$*" >> "$CLAUDE_LOG"
 SH
 chmod +x "$FAKEC/claude"
 IP() { PATH="$FAKEC:$PATH" bash "$WB/install.sh" "$@" >/dev/null 2>&1; }
-tkj() { echo "import json; d=json.load(open(\"$C/settings.json\"))"; }
-fresh tk; : > "$CLAUDE_LOG"; IP --all
-t "--all does not enable or install token-keeper" "python3 -I -c '$(tkj)
-assert \"token-keeper@claude-token-keeper\" not in d[\"enabledPlugins\"] and \"claude-token-keeper\" not in d[\"extraKnownMarketplaces\"]' && ! grep -q token-keeper '$CLAUDE_LOG'"
-fresh tk2; snap > "$T/k0"; : > "$CLAUDE_LOG"
+UP() { PATH="$FAKEC:$PATH" bash "$WB/uninstall.sh" "$@" >/dev/null 2>&1; }
+tkreset() { rm -f "$CLAUDE_LOG" "$CLAUDE_LOG.mk"; : > "$CLAUDE_LOG"; }
+fresh tk; tkreset; IP --all
+t "--all does not install token-keeper" "! grep -q token-keeper '$CLAUDE_LOG'"
+fresh tk2; tkreset; snap > "$T/k0"
 PATH="$FAKEC:$PATH" bash "$WB/install.sh" --with token-keeper --dry-run > "$T/tk.dry" 2>&1; snap > "$T/k1"
-t "token-keeper dry-run writes nothing and names the plugin" "cmp -s '$T/k0' '$T/k1' && grep -q 'claude plugin install token-keeper@claude-token-keeper' '$T/tk.dry' && [ ! -s '$CLAUDE_LOG' ]"
+t "token-keeper dry-run writes nothing, runs no command and shows the pinned commands" "cmp -s '$T/k0' '$T/k1' && [ ! -s '$CLAUDE_LOG' ] && grep -q 'claude plugin marketplace add leomattos7/claude-token-keeper@v0.1.0' '$T/tk.dry' && grep -q 'claude plugin install token-keeper@claude-token-keeper --scope user' '$T/tk.dry'"
 IP --with token-keeper; snap > "$T/k2"; IP --with token-keeper; snap > "$T/k3"
-t "token-keeper: second install changes nothing" "cmp -s '$T/k2' '$T/k3'"
-t "token-keeper adds the marketplace, enables the plugin and installs it through the CLI; nothing is vendored" "python3 -I -c '$(tkj)
-assert d[\"enabledPlugins\"][\"token-keeper@claude-token-keeper\"] is True
-assert d[\"extraKnownMarketplaces\"][\"claude-token-keeper\"][\"source\"][\"repo\"] == \"leomattos7/claude-token-keeper\"' && grep -qx 'plugin marketplace add leomattos7/claude-token-keeper' '$CLAUDE_LOG' && grep -qx 'plugin install token-keeper@claude-token-keeper --scope user' '$CLAUDE_LOG' && ! find '$HOME' -name register.ts | grep -q ."
-fresh tk4; I --with token-keeper
-t "--no-plugins merges nothing for token-keeper" "python3 -I -c '$(tkj)
-assert \"token-keeper\" not in json.dumps(d)'"
-fresh tk5; IP --with token-keeper; U --with token-keeper
-t "uninstall --with token-keeper removes only its entries" "python3 -I -c '$(tkj)
-assert \"token-keeper\" not in json.dumps(d) and d[\"enabledPlugins\"][\"oh-my-claudecode@omc\"] is True'"
-fresh tk6; IP --with token-keeper; U
-t "full uninstall leaves no token-keeper entry" "python3 -I -c '
-import json,os; p=\"$C/settings.json\"; d=json.load(open(p)) if os.path.exists(p) else {}
-assert \"token-keeper\" not in json.dumps(d)'"
+t "token-keeper: second install changes no file" "cmp -s '$T/k2' '$T/k3'"
+t "token-keeper adds the pinned marketplace once and installs the plugin; nothing is vendored or merged" "[ \$(grep -c 'plugin marketplace add leomattos7/claude-token-keeper@v0.1.0' '$CLAUDE_LOG') = 1 ] && grep -qx 'plugin install token-keeper@claude-token-keeper --scope user' '$CLAUDE_LOG' && ! find '$HOME' -name register.ts | grep -q . && ! grep -q token-keeper '$C/settings.json'"
+fresh tk4; tkreset; IP --no-plugins --with token-keeper
+t "--no-plugins installs nothing for token-keeper" "! grep -q token-keeper '$CLAUDE_LOG'"
+fresh tk5; tkreset; IP --with token-keeper; : > "$CLAUDE_LOG"; UP --with token-keeper
+t "uninstall --with token-keeper uninstalls the plugin and removes the marketplace it added" "grep -qx 'plugin uninstall token-keeper@claude-token-keeper --scope user' '$CLAUDE_LOG' && grep -qx 'plugin marketplace remove claude-token-keeper' '$CLAUDE_LOG'"
+fresh tk6; tkreset; touch "$CLAUDE_LOG.mk"; IP --with token-keeper; : > "$CLAUDE_LOG"; UP --with token-keeper
+t "a marketplace that was already there is neither re-added nor removed" "! grep -q 'marketplace add' '$T/claude.log' && grep -qx 'plugin uninstall token-keeper@claude-token-keeper --scope user' '$CLAUDE_LOG' && ! grep -q 'marketplace remove' '$CLAUDE_LOG'"
+fresh tk7; tkreset; IP --with token-keeper; UP
+t "full uninstall removes it too and leaves no state" "grep -qx 'plugin uninstall token-keeper@claude-token-keeper --scope user' '$CLAUDE_LOG' && [ ! -e '$HOME/.local/share/workbench' ]"
 t "unknown optional is still rejected" "! bash '$WB/install.sh' --dry-run --with nope"
 echo "== other agents (codex, cursor)"
 fresh agents; mkdir -p "$HOME/.codex"; printf '# mine\n' > "$HOME/.codex/AGENTS.md"; cp "$HOME/.codex/AGENTS.md" "$T/agents.orig"
