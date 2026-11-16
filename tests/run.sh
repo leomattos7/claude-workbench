@@ -228,10 +228,10 @@ fresh tk; tkreset; IP --all
 t "--all does not install token-keeper" "! grep -q token-keeper '$CLAUDE_LOG'"
 fresh tk2; tkreset; snap > "$T/k0"
 PATH="$FAKEC:$PATH" bash "$WB/install.sh" --with token-keeper --dry-run > "$T/tk.dry" 2>&1; snap > "$T/k1"
-t "token-keeper dry-run writes nothing, runs no command and shows the pinned commands" "cmp -s '$T/k0' '$T/k1' && [ ! -s '$CLAUDE_LOG' ] && grep -q 'claude plugin marketplace add leomattos7/claude-token-keeper@v0.1.0' '$T/tk.dry' && grep -q 'claude plugin install token-keeper@claude-token-keeper --scope user' '$T/tk.dry'"
+t "token-keeper dry-run writes nothing, runs no command and shows the pinned commands" "cmp -s '$T/k0' '$T/k1' && [ ! -s '$CLAUDE_LOG' ] && grep -q 'claude plugin marketplace add leomattos7/claude-token-keeper@v0.1.1' '$T/tk.dry' && grep -q 'claude plugin install token-keeper@claude-token-keeper --scope user' '$T/tk.dry'"
 IP --with token-keeper; snap > "$T/k2"; IP --with token-keeper; snap > "$T/k3"
 t "token-keeper: second install changes no file" "cmp -s '$T/k2' '$T/k3'"
-t "token-keeper adds the pinned marketplace once and installs the plugin; nothing is vendored or merged" "[ \$(grep -c 'plugin marketplace add leomattos7/claude-token-keeper@v0.1.0' '$CLAUDE_LOG') = 1 ] && grep -qx 'plugin install token-keeper@claude-token-keeper --scope user' '$CLAUDE_LOG' && ! find '$HOME' -name register.ts | grep -q . && ! grep -q token-keeper '$C/settings.json'"
+t "token-keeper adds the pinned marketplace once and installs the plugin; nothing is vendored or merged" "[ \$(grep -c 'plugin marketplace add leomattos7/claude-token-keeper@v0.1.1' '$CLAUDE_LOG') = 1 ] && grep -qx 'plugin install token-keeper@claude-token-keeper --scope user' '$CLAUDE_LOG' && ! find '$HOME' -name register.ts | grep -q . && ! grep -q token-keeper '$C/settings.json'"
 fresh tk4; tkreset; IP --no-plugins --with token-keeper
 t "--no-plugins installs nothing for token-keeper" "! grep -q token-keeper '$CLAUDE_LOG'"
 fresh tk5; tkreset; IP --with token-keeper; : > "$CLAUDE_LOG"; UP --with token-keeper

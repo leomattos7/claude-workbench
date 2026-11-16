@@ -8,7 +8,7 @@ Nothing is vendored here and workbench does not touch `settings.json` for it.
 `--with token-keeper` runs `optional/token-keeper/setup.sh`, which does two things through the `claude` CLI:
 
 ```bash
-claude plugin marketplace add leomattos7/claude-token-keeper@v0.1.0   # pinned to a tag
+claude plugin marketplace add leomattos7/claude-token-keeper@v0.1.1   # pinned to a tag
 claude plugin install token-keeper@claude-token-keeper --scope user
 ```
 
