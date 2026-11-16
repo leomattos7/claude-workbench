@@ -3,7 +3,7 @@
 # Usage: setup.sh [--dry-run] [--uninstall] [--no-plugins] [--help]
 set -euo pipefail
 
-REPO="leomattos7/claude-token-keeper"; REF="v0.1.0"   # pin; raise it after reading the new release
+REPO="leomattos7/claude-token-keeper"; REF="v0.1.1"   # pin; raise it after reading the new release
 MARKET="claude-token-keeper"; PLUGIN="token-keeper@$MARKET"
 STATE="${STATE:-$HOME/.local/share/workbench/state/manual}"; MARK="$STATE/token-keeper-marketplace"   # present = this setup added the marketplace
 dry=0; uninstall=0; plugins=1
