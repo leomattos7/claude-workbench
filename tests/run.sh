@@ -207,6 +207,36 @@ import json; d=json.load(open(\"$C/settings.json\")); assert d[\"omcHud\"][\"ele
 U --with panels
 t "uninstall --with panels removes omcHud entirely" "python3 -I -c '
 import json; assert \"omcHud\" not in json.load(open(\"$C/settings.json\"))'"
+echo "== token-keeper (plugin optional, opt-in; fake claude CLI, no network)"
+FAKEC="$T/fakeclaude"; mkdir -p "$FAKEC"; export CLAUDE_LOG="$T/claude.log"
+cat > "$FAKEC/claude" <<'SH'
+#!/usr/bin/env bash
+if [ "${1:-}" = --version ]; then echo "2.1.325 (Claude Code)"; else echo "$*" >> "$CLAUDE_LOG"; fi
+SH
+chmod +x "$FAKEC/claude"
+IP() { PATH="$FAKEC:$PATH" bash "$WB/install.sh" "$@" >/dev/null 2>&1; }
+tkj() { echo "import json; d=json.load(open(\"$C/settings.json\"))"; }
+fresh tk; : > "$CLAUDE_LOG"; IP --all
+t "--all does not enable or install token-keeper" "python3 -I -c '$(tkj)
+assert \"token-keeper@claude-token-keeper\" not in d[\"enabledPlugins\"] and \"claude-token-keeper\" not in d[\"extraKnownMarketplaces\"]' && ! grep -q token-keeper '$CLAUDE_LOG'"
+fresh tk2; snap > "$T/k0"; : > "$CLAUDE_LOG"
+PATH="$FAKEC:$PATH" bash "$WB/install.sh" --with token-keeper --dry-run > "$T/tk.dry" 2>&1; snap > "$T/k1"
+t "token-keeper dry-run writes nothing and names the plugin" "cmp -s '$T/k0' '$T/k1' && grep -q 'claude plugin install token-keeper@claude-token-keeper' '$T/tk.dry' && [ ! -s '$CLAUDE_LOG' ]"
+IP --with token-keeper; snap > "$T/k2"; IP --with token-keeper; snap > "$T/k3"
+t "token-keeper: second install changes nothing" "cmp -s '$T/k2' '$T/k3'"
+t "token-keeper adds the marketplace, enables the plugin and installs it through the CLI; nothing is vendored" "python3 -I -c '$(tkj)
+assert d[\"enabledPlugins\"][\"token-keeper@claude-token-keeper\"] is True
+assert d[\"extraKnownMarketplaces\"][\"claude-token-keeper\"][\"source\"][\"repo\"] == \"leomattos7/claude-token-keeper\"' && grep -qx 'plugin marketplace add leomattos7/claude-token-keeper' '$CLAUDE_LOG' && grep -qx 'plugin install token-keeper@claude-token-keeper --scope user' '$CLAUDE_LOG' && ! find '$HOME' -name register.ts | grep -q ."
+fresh tk4; I --with token-keeper
+t "--no-plugins merges nothing for token-keeper" "python3 -I -c '$(tkj)
+assert \"token-keeper\" not in json.dumps(d)'"
+fresh tk5; IP --with token-keeper; U --with token-keeper
+t "uninstall --with token-keeper removes only its entries" "python3 -I -c '$(tkj)
+assert \"token-keeper\" not in json.dumps(d) and d[\"enabledPlugins\"][\"oh-my-claudecode@omc\"] is True'"
+fresh tk6; IP --with token-keeper; U
+t "full uninstall leaves no token-keeper entry" "python3 -I -c '
+import json,os; p=\"$C/settings.json\"; d=json.load(open(p)) if os.path.exists(p) else {}
+assert \"token-keeper\" not in json.dumps(d)'"
 t "unknown optional is still rejected" "! bash '$WB/install.sh' --dry-run --with nope"
 echo "== other agents (codex, cursor)"
 fresh agents; mkdir -p "$HOME/.codex"; printf '# mine\n' > "$HOME/.codex/AGENTS.md"; cp "$HOME/.codex/AGENTS.md" "$T/agents.orig"
