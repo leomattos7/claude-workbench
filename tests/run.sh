@@ -217,13 +217,16 @@ case "$*" in
   "plugin marketplace list") [ -f "$CLAUDE_LOG.mk" ] && echo "  ❯ claude-token-keeper"; exit 0 ;;
   "plugin marketplace add "*token-keeper*) touch "$CLAUDE_LOG.mk" ;;
   "plugin marketplace remove claude-token-keeper") rm -f "$CLAUDE_LOG.mk" ;;
+  "plugin list") [ -f "$CLAUDE_LOG.pl" ] && echo "  ❯ token-keeper@claude-token-keeper"; exit 0 ;;
+  "plugin install token-keeper@claude-token-keeper"*) touch "$CLAUDE_LOG.pl" ;;
+  "plugin uninstall token-keeper@claude-token-keeper"*) rm -f "$CLAUDE_LOG.pl" ;;
 esac
 echo "$*" >> "$CLAUDE_LOG"
 SH
 chmod +x "$FAKEC/claude"
 IP() { PATH="$FAKEC:$PATH" bash "$WB/install.sh" "$@" >/dev/null 2>&1; }
 UP() { PATH="$FAKEC:$PATH" bash "$WB/uninstall.sh" "$@" >/dev/null 2>&1; }
-tkreset() { rm -f "$CLAUDE_LOG" "$CLAUDE_LOG.mk"; : > "$CLAUDE_LOG"; }
+tkreset() { rm -f "$CLAUDE_LOG" "$CLAUDE_LOG.mk" "$CLAUDE_LOG.pl"; : > "$CLAUDE_LOG"; }
 fresh tk; tkreset; IP --all
 t "--all does not install token-keeper" "! grep -q token-keeper '$CLAUDE_LOG'"
 fresh tk2; tkreset; snap > "$T/k0"
@@ -236,8 +239,10 @@ fresh tk4; tkreset; IP --no-plugins --with token-keeper
 t "--no-plugins installs nothing for token-keeper" "! grep -q token-keeper '$CLAUDE_LOG'"
 fresh tk5; tkreset; IP --with token-keeper; : > "$CLAUDE_LOG"; UP --with token-keeper
 t "uninstall --with token-keeper uninstalls the plugin and removes the marketplace it added" "grep -qx 'plugin uninstall token-keeper@claude-token-keeper --scope user' '$CLAUDE_LOG' && grep -qx 'plugin marketplace remove claude-token-keeper' '$CLAUDE_LOG'"
-fresh tk6; tkreset; touch "$CLAUDE_LOG.mk"; IP --with token-keeper; : > "$CLAUDE_LOG"; UP --with token-keeper
-t "a marketplace that was already there is neither re-added nor removed" "! grep -q 'marketplace add' '$T/claude.log' && grep -qx 'plugin uninstall token-keeper@claude-token-keeper --scope user' '$CLAUDE_LOG' && ! grep -q 'marketplace remove' '$CLAUDE_LOG'"
+fresh tk6; tkreset; touch "$CLAUDE_LOG.mk"; IP --with token-keeper; cp "$CLAUDE_LOG" "$T/inst.log"; : > "$CLAUDE_LOG"; UP --with token-keeper
+t "a marketplace that was already there is neither re-added nor removed (the plugin it installed is uninstalled)" "! grep -q 'marketplace add .*token-keeper' '$T/inst.log' && grep -q 'plugin install token-keeper' '$T/inst.log' && grep -qx 'plugin uninstall token-keeper@claude-token-keeper --scope user' '$CLAUDE_LOG' && ! grep -q 'marketplace remove' '$CLAUDE_LOG'"
+fresh tk8; tkreset; touch "$CLAUDE_LOG.pl"; IP --with token-keeper; cp "$CLAUDE_LOG" "$T/inst.log"; : > "$CLAUDE_LOG"; UP --with token-keeper
+t "a plugin that was already installed is neither re-installed nor uninstalled (the marketplace it added is removed)" "grep -q 'marketplace add .*token-keeper' '$T/inst.log' && ! grep -q 'plugin install token-keeper' '$T/inst.log' && ! grep -q 'plugin uninstall token-keeper' '$CLAUDE_LOG' && grep -qx 'plugin marketplace remove claude-token-keeper' '$CLAUDE_LOG'"
 fresh tk7; tkreset; IP --with token-keeper; UP
 t "full uninstall removes it too and leaves no state" "grep -qx 'plugin uninstall token-keeper@claude-token-keeper --scope user' '$CLAUDE_LOG' && [ ! -e '$HOME/.local/share/workbench' ]"
 t "unknown optional is still rejected" "! bash '$WB/install.sh' --dry-run --with nope"
