@@ -121,6 +121,29 @@ class SharedWorkbenchTest(unittest.TestCase):
                 process.wait(timeout=3)
                 reader.join(timeout=3)
 
+    def test_claude_approval_probe_permission_tool_protocol(self):
+        script = REPO / "tests/claude_approval_probe.py"
+        for choice in ("approve", "deny"):
+            root = self.root / choice
+            root.mkdir()
+            marker = root / "probe.txt"
+            (root / "decision.json").write_text(json.dumps(choice), encoding="utf-8")
+            def call(request_id, path):
+                return {"jsonrpc": "2.0", "id": request_id, "method": "tools/call", "params": {
+                    "name": "approve", "arguments": {"tool_name": "Write",
+                    "input": {"file_path": str(path), "content": "probe"}},
+                }}
+            requests = [call(1, root / "unrelated.txt"), call(2, marker), call(3, marker)]
+            result = subprocess.run([sys.executable, str(script), "--server", str(root), str(marker), "probe"],
+                                    input="\n".join(map(json.dumps, requests)), capture_output=True, text=True, check=True)
+            decisions = [json.loads(json.loads(line)["result"]["content"][0]["text"])
+                         for line in result.stdout.splitlines()]
+            self.assertEqual([d["behavior"] for d in decisions], ["deny", "allow" if choice == "approve" else "deny", "deny"])
+            if choice == "approve":
+                self.assertEqual(decisions[1]["updatedInput"], {"file_path": str(marker), "content": "probe"})
+            self.assertEqual(json.loads((root / "relayed.json").read_text(encoding="utf-8")), choice)
+            self.assertFalse(marker.exists())
+
     def test_concurrent_vault_writes_require_merging_stale_index(self):
         vault = self.root / "Vault with spaces"
         shutil.copytree(REPO / "optional/vault/scaffold", vault)
