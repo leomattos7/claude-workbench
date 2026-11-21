@@ -3,10 +3,12 @@ import json
 import os
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from queue import Queue
 import shutil
 import subprocess
 import sys
 from tempfile import TemporaryDirectory
+from threading import Thread
 import unittest
 import uuid
 
@@ -78,6 +80,46 @@ class SharedWorkbenchTest(unittest.TestCase):
             env.pop("WORKBENCH_STATE", None)
             actual = self.cli("resume", "feature", agent, "--vault", str(vault), env=env)
             self.assertEqual(actual, [[flag, native, "--add-dir", str(vault)], str(self.root), "feature", agent, str(self.state)])
+
+    def test_claude_channel_wakes_only_for_the_registered_inbox(self):
+        self.register("claude", "claude")
+        self.register("claude", "other")
+        self.register("codex", "codex")
+        channel = CLI.with_name("claude-channel.py")
+        with subprocess.Popen([sys.executable, str(channel), str(self.state), "feature", "claude"],
+                              text=True, stdin=subprocess.PIPE, stdout=subprocess.PIPE) as process:
+            output = Queue()
+
+            def collect():
+                for line in process.stdout:
+                    output.put(json.loads(line))
+
+            reader = Thread(target=collect, daemon=True)
+            reader.start()
+            try:
+                handshake = {"jsonrpc": "2.0", "id": 1, "method": "initialize",
+                             "params": {"protocolVersion": "2026-07-28"}}
+                print(json.dumps(handshake), file=process.stdin, flush=True)
+                init = output.get(timeout=3)["result"]
+                self.assertEqual(init["protocolVersion"], "2025-11-25")
+                self.assertIn("claude/channel", init["capabilities"]["experimental"])
+                self.assertIn("inbox feature claude", init["instructions"])
+                self.cli("send", "feature", "codex", "other", "--id", str(uuid.uuid4()), body="Different session")
+                pending = str(uuid.uuid4())
+                self.cli("send", "feature", "codex", "claude", "--id", pending, body="Already queued")
+                print(json.dumps({"jsonrpc": "2.0", "method": "notifications/initialized"}),
+                      file=process.stdin, flush=True)
+                event = output.get(timeout=3)
+                self.assertEqual(event["method"], "notifications/claude/channel")
+                self.assertEqual(event["params"]["meta"]["message_id"], pending)
+                self.cli("ack", "feature", "claude", pending)
+                another = str(uuid.uuid4())
+                self.cli("send", "feature", "codex", "claude", "--id", another, body="Next request")
+                self.assertEqual(output.get(timeout=3)["params"]["meta"]["message_id"], another)
+            finally:
+                process.stdin.close()
+                process.wait(timeout=3)
+                reader.join(timeout=3)
 
     def test_concurrent_vault_writes_require_merging_stale_index(self):
         vault = self.root / "Vault with spaces"

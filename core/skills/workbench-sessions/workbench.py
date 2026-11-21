@@ -83,6 +83,7 @@ def parser():
     resume.add_argument("task", type=label)
     resume.add_argument("session", type=label)
     resume.add_argument("--vault", type=Path, help="add the shared vault to the native workspace")
+    resume.add_argument("--listen", action="store_true", help="connect the Claude Code preview channel")
     return cli
 
 
@@ -154,7 +155,7 @@ def execute(db, args, body):
     return {"acknowledged": original["id"]}
 
 
-def resume(record, state, vault):
+def resume(record, state, vault, listen):
     session_id = record["native_id"]
     commands = {
         "claude": ["claude", "--resume", session_id],
@@ -169,6 +170,14 @@ def resume(record, state, vault):
         if not (vault / "CLAUDE.md").is_file() or not (vault / "wiki").is_dir():
             raise ValueError("--vault must name an existing Workbench vault")
         command.extend(("--add-dir", str(vault)))
+    if listen:
+        if record["agent"] != "claude":
+            raise ValueError("--listen currently requires a Claude Code session")
+        server = Path(__file__).resolve().with_name("claude-channel.py")
+        config = {"mcpServers": {"workbench-inbox": {"command": sys.executable,
+                   "args": [str(server), str(state), record["task"], record["name"]]}}}
+        command.extend(("--mcp-config", json.dumps(config), "--dangerously-load-development-channels",
+                        "server:workbench-inbox"))
     env = dict(os.environ, WORKBENCH_TASK=record["task"], WORKBENCH_SESSION=record["name"],
                WORKBENCH_STATE=str(state))
     return subprocess.run(command, cwd=record["cwd"], env=env, check=False).returncode
@@ -198,7 +207,7 @@ def main(argv=None):
         finally:
             os.umask(old_umask)
         if args.command == "resume":
-            return resume(result, args.state, args.vault)
+            return resume(result, args.state, args.vault, args.listen)
         print(json.dumps(result, ensure_ascii=True))
         return 0
     except (OSError, sqlite3.Error, ValueError) as exc:
