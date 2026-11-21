@@ -1,0 +1,138 @@
+import hashlib
+import json
+import os
+from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
+import shutil
+import subprocess
+import sys
+from tempfile import TemporaryDirectory
+import unittest
+import uuid
+
+
+REPO = Path(__file__).resolve().parents[1]
+CLI = REPO / "core/skills/workbench-sessions/workbench.py"
+VAULT_WRITER = REPO / "optional/vault/skill/vault-write.py"
+
+
+class SharedWorkbenchTest(unittest.TestCase):
+    def setUp(self):
+        temp = TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        self.root = Path(temp.name)
+        self.state = self.root / "state"
+
+    def cli(self, *args, body=None, env=None, check=True):
+        result = subprocess.run([sys.executable, str(CLI), "--state", str(self.state), *args],
+                                input=body, encoding="utf-8", capture_output=True, env=env, check=check)
+        return json.loads(result.stdout) if result.returncode == 0 else result
+
+    def register(self, agent, name):
+        native = str(uuid.uuid4())
+        self.cli("attach", "feature", name, agent, native, "--cwd", str(self.root))
+        return native
+
+    def test_roundtrips_restart_routing_and_retries(self):
+        for agent in ("claude", "codex", "cursor"):
+            self.register(agent, agent)
+            self.register(agent, agent + "-other")
+        self.assertEqual(len(self.cli("sessions", "feature")), 6)
+        for sender, recipient in (("claude", "codex"), ("codex", "claude"),
+                                  ("cursor", "claude"), ("claude", "cursor")):
+            sent, replied = str(uuid.uuid4()), str(uuid.uuid4())
+            command = ("send", "feature", sender, recipient, "--id", sent)
+            self.cli(*command, body="Please review")
+            self.cli(*command, body="Please review")
+            # Every invocation is a fresh process reading the same database.
+            self.assertEqual([m["id"] for m in self.cli("inbox", "feature", recipient)], [sent])
+            self.assertEqual(self.cli("inbox", "feature", recipient + "-other"), [])
+            self.assertNotEqual(self.cli("ack", "feature", recipient + "-other", sent, check=False).returncode, 0)
+            reply = ("reply", "feature", recipient, sent, "--id", replied)
+            self.cli(*reply, body="Reviewed")
+            self.cli(*reply, body="Reviewed")
+            self.assertNotEqual(self.cli(*reply[:-1], str(uuid.uuid4()), body="Another", check=False).returncode, 0)
+            self.assertEqual(self.cli("inbox", "feature", recipient), [])
+            response, = self.cli("inbox", "feature", sender)
+            self.assertEqual((response["id"], response["reply_to"], response["body"]), (replied, sent, "Reviewed"))
+            self.cli("ack", "feature", sender, replied)
+
+    @unittest.skipIf(os.name == "nt", "native command stubs use a POSIX shebang")
+    def test_resume_preserves_native_id_worktree_and_mailbox_identity(self):
+        commands = {"claude": ("claude", "--resume"), "codex": ("codex", "resume"),
+                    "cursor": ("cursor-agent", "--resume")}
+        command_dir = self.root / "bin"
+        command_dir.mkdir()
+        vault = self.root / "Shared Vault"
+        (vault / "wiki").mkdir(parents=True)
+        (vault / "CLAUDE.md").touch()
+        for agent, (binary, flag) in commands.items():
+            native = self.register(agent, agent)
+            stub = command_dir / binary
+            stub.write_text(f"#!{sys.executable}\n"
+                            "import json, os, sys\n"
+                            "print(json.dumps([sys.argv[1:], os.getcwd(), os.environ['WORKBENCH_TASK'], "
+                            "os.environ['WORKBENCH_SESSION'], os.environ['WORKBENCH_STATE']]))\n", encoding="utf-8")
+            stub.chmod(0o700)
+            env = {**os.environ, "PATH": str(command_dir)}
+            env.pop("WORKBENCH_STATE", None)
+            actual = self.cli("resume", "feature", agent, "--vault", str(vault), env=env)
+            self.assertEqual(actual, [[flag, native, "--add-dir", str(vault)], str(self.root), "feature", agent, str(self.state)])
+
+    def test_concurrent_vault_writes_require_merging_stale_index(self):
+        vault = self.root / "Vault with spaces"
+        shutil.copytree(REPO / "optional/vault/scaffold", vault)
+        index = vault / "wiki/index.md"
+        original = index.read_text(encoding="utf-8")
+        expected = hashlib.sha256(index.read_bytes()).hexdigest()
+
+        def submit(name, version, content):
+            batch = self.root / f"{name}.json"
+            raw = f"raw/notes/{name}.md"
+            (vault / raw).write_text(name, encoding="utf-8")
+            batch.write_text(json.dumps({"edits": [
+                {"path": f"wiki/sources/{name}.md", "expected_sha256": None, "text": name},
+                {"path": "wiki/index.md", "expected_sha256": version, "text": content + f"\n[[{name}]]\n"},
+            ], "register": [raw]}), encoding="utf-8")
+            result = subprocess.run([sys.executable, str(VAULT_WRITER), str(vault), str(batch)],
+                                    capture_output=True, text=True)
+            return name, result
+
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            results = [pool.submit(submit, name, expected, original) for name in ("alpha", "beta")]
+            outcomes = [future.result() for future in results]
+        successes = [name for name, result in outcomes if result.returncode == 0]
+        self.assertEqual(len(successes), 1)
+        loser = ({"alpha", "beta"} - set(successes)).pop()
+        self.assertFalse((vault / f"wiki/sources/{loser}.md").exists())
+        _, retry = submit(loser, hashlib.sha256(index.read_bytes()).hexdigest(), index.read_text(encoding="utf-8"))
+        self.assertEqual(retry.returncode, 0, retry.stderr)
+        for name in ("alpha", "beta"):
+            self.assertIn(f"[[{name}]]", index.read_text(encoding="utf-8"))
+            self.assertIn(f"raw/notes/{name}.md", (vault / "manifest.tsv").read_text(encoding="utf-8"))
+
+
+    def test_vault_registration_failure_restores_wiki_and_manifest(self):
+        vault = self.root / "vault"
+        shutil.copytree(REPO / "optional/vault/scaffold", vault)
+        raw = vault / "raw/notes/source.md"
+        raw.touch()
+        manifest = vault / "manifest.tsv"
+        original = manifest.read_bytes()
+        (vault / "tools/vault.py").write_text(
+            "from pathlib import Path\nPath('manifest.tsv').write_text('partial')\nraise SystemExit(1)\n",
+            encoding="utf-8",
+        )
+        batch = self.root / "batch.json"
+        batch.write_text(json.dumps({"edits": [
+            {"path": "wiki/sources/new.md", "expected_sha256": None, "text": "draft"},
+        ], "register": ["raw/notes/source.md"]}), encoding="utf-8")
+        result = subprocess.run([sys.executable, str(VAULT_WRITER), str(vault), str(batch)],
+                                capture_output=True, text=True)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(manifest.read_bytes(), original)
+        self.assertFalse((vault / "wiki/sources/new.md").exists())
+
+
+if __name__ == "__main__":
+    unittest.main()

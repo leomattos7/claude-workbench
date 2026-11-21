@@ -258,15 +258,25 @@ t "second agent install changes nothing" "cmp -s '$T/a2' '$T/a3'"
 t "codex: rules block added, user text kept" "grep -q '^# mine' '$HOME/.codex/AGENTS.md' && grep -q 'WORKBENCH:CORE:START' '$HOME/.codex/AGENTS.md'"
 t "codex and cursor: handoff skill installed" "[ -f '$HOME/.agents/skills/handoff/SKILL.md' ] && [ -f '$HOME/.cursor/skills/handoff/template.md' ]"
 t "cursor: rules file for pasting" "[ -f '$HOME/.local/share/workbench/rules/AGENTS.md' ]"
-t "no Claude-only text in the agent rules or skills" "! grep -rqiE 'oh-my-claudecode|work-mode|parallel-delegation|allowed-tools' '$HOME/.codex/AGENTS.md' '$HOME/.local/share/workbench/rules' '$HOME/.agents/skills'"
+t "same rule text and portable skills on Codex and Cursor" "cmp -s '$WB/core/CLAUDE.md' '$HOME/.local/share/workbench/rules/AGENTS.md' && diff -r '$HOME/.agents/skills' '$HOME/.cursor/skills' && grep -q workbench-sessions '$HOME/.codex/AGENTS.md'"
 t "claude files not created" "[ ! -e '$C/settings.json' ] && [ ! -e '$C/skills' ] && [ ! -e '$C/CLAUDE.md' ]"
 t "agent skill frontmatter name matches its folder" "[ \"\$(sed -n 's/^name: *//p' '$HOME/.cursor/skills/handoff/SKILL.md' | head -1)\" = handoff ]"
 t "optionals need claude" "! bash '$WB/install.sh' --no-plugins --agent codex --with wsl"
+
 t "unknown agent rejected" "! bash '$WB/install.sh' --dry-run --agent nope"
 U --agent codex
 t "uninstall --agent codex restores AGENTS.md and keeps cursor" "cmp -s '$HOME/.codex/AGENTS.md' '$T/agents.orig' && [ ! -e '$HOME/.agents/skills/handoff' ] && [ -f '$HOME/.cursor/skills/handoff/SKILL.md' ]"
 U
 t "uninstall removes cursor files and state" "[ ! -e '$HOME/.cursor/skills/handoff' ] && [ ! -e '$HOME/.local/share/workbench' ]"
+fresh shared-vault; I --agent claude,codex,cursor --with vault --vault-path "$HOME/Shared Vault"
+t "all agents get the same vault skill and path" "diff -r '$C/skills/vault' '$HOME/.agents/skills/vault' && diff -r '$HOME/.agents/skills/vault' '$HOME/.cursor/skills/vault' && grep -Fq '$HOME/Shared Vault' '$HOME/.agents/skills/vault/SKILL.md'"
+U --agent codex --with vault
+t "scoped vault uninstall keeps peer skills and contents" "[ ! -e '$HOME/.agents/skills/vault' ] && [ -f '$HOME/.agents/skills/workbench-sessions/workbench.py' ] && [ -f '$C/skills/vault/SKILL.md' ] && [ -f '$HOME/Shared Vault/manifest.tsv' ]"
+U
+fresh portable-vault; I --agent codex,cursor --with vault
+t "portable vault needs no Claude installation" "[ -f '$HOME/vault/manifest.tsv' ] && [ -f '$HOME/.agents/skills/vault/vault-write.py' ] && [ ! -e '$C/skills' ]"
+U
+
 fresh agents2; export CODEX_HOME="$HOME/cx"; I --agent codex; unset CODEX_HOME
 t "CODEX_HOME relocates the rules file" "grep -q 'WORKBENCH:CORE:START' '$HOME/cx/AGENTS.md' && [ ! -e '$HOME/.codex' ]"
 fresh agents3; I --agent claude,codex; U --agent claude
@@ -351,6 +361,9 @@ frag '{"permissions":{"deny":["Read(a)"]},"extraKnownMarketplaces":{"m":{"source
 t "dropped deny/ask entries and changed marketplace blocked (--base)" "blocked --base HEAD '$T/fx' && grep -q 'Read(b)' '$T/scan.out' && grep -q 'git push' '$T/scan.out' && grep -q \"'extraKnownMarketplaces' changed\" '$T/scan.out'"
 t "unchanged fragment passes (--base)" "git -C '$T/fx' checkout -q -- . && scan --base HEAD '$T/fx'"
 t "repo passes the injection scan" "python3 -I '$CHK'"
+
+echo "== shared Workbench"
+t "mailbox, native resume and concurrent vault writes" "python3 -I '$WB/tests/test_shared_workbench.py'"
 
 echo "== hygiene"
 t "shell syntax (bash -n)" "for f in \$(grep -rlE '^#!/usr/bin/env bash' '$WB' --exclude-dir=.git); do bash -n \"\$f\" || exit 1; done"

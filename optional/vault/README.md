@@ -1,6 +1,6 @@
-# vault: a second brain for Claude Code
+# Vault: a shared second brain
 
-An LLM wiki (Karpathy model): you drop sources into `raw/`, Claude turns them into linked Markdown pages
+An LLM wiki (Karpathy model): you drop sources into `raw/`, Workbench agents turn them into linked Markdown pages
 in `wiki/` (sources, entities, concepts, syntheses), and answers questions from those pages with citations.
 Plain Markdown; works well with Obsidian but does not require it.
 
@@ -20,6 +20,8 @@ bash optional/vault/setup.sh [--path <dir>]   # default: $HOME/vault
 Flags: `--dry-run` (print actions, write nothing), `--uninstall`, `--help`. Running it twice changes nothing.
 
 ## Usage
+
+Install the vault skill for the agents you use with `./install.sh --agent claude,codex,cursor --with vault --vault-path "$HOME/vault"`. They share the same existing Markdown vault. The skill uses a locked, version-checked write command for wiki pages, index, log and source registration. If another agent updated a page, the second writer re-reads and merges before retrying. Direct edits outside the Workbench command are outside that lock. Ignore the local `.workbench-vault-lock.sqlite3` file in your vault's Git configuration.
 
 Tell Claude "ingest this", "save to my vault", "what do I know about X" or "review the vault"
 from any directory. The rules live in `<dir>/CLAUDE.md`; edit them (and `TAG_ROOTS` in `tools/vault.py`) to fit you.

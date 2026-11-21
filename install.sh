@@ -12,8 +12,7 @@
 #   ./install.sh --uninstall [--with ...] remove what workbench installed (without --with: everything)
 #
 # Targets: $CLAUDE_CONFIG_DIR (default ~/.claude), ~/.local/share/workbench, ~/.local/bin.
-# Codex and Cursor get the portable part only (rules text and the handoff skill); hooks, mods, the
-# optionals and the other skills are Claude Code only.
+# All agents get the shared rules and skills. Claude Code also gets native hooks and mods.
 # Never copies credentials and never logs in anywhere. Before a file is rewritten, a real copy is
 # kept as <file>.bak-<timestamp>. Settings are merged (additions only) and recorded in a receipt,
 # so --uninstall removes exactly what was added; installed files are removed only if unmodified,
@@ -35,7 +34,7 @@ AGENTS="claude"; AGENTS_GIVEN=0; KNOWN_AGENTS="claude codex cursor"
 CODEX_MD="${CODEX_HOME:-$HOME/.codex}/AGENTS.md"   # Codex global instructions
 AGENTS_SKILLS="$HOME/.agents/skills"              # Codex user skills (Cursor reads it too)
 CURSOR_SKILLS="$HOME/.cursor/skills"              # Cursor user skills (the CLI reads this one reliably)
-PORTABLE_SKILLS="handoff"                         # work-mode and parallel-delegation lean on OMC and Claude Code tools
+PORTABLE_SKILLS="work-mode parallel-delegation handoff workbench-sessions"
 export CLAUDE_HOME WB_STAMP STATE
 
 need() { [ -n "${2:-}" ] || { echo "$1 needs a value (see --help)" >&2; exit 1; }; }
@@ -167,7 +166,7 @@ install_optional() {
 remove_component() { # remove_component <component> [block-name [target.md]]
   local comp="$1" c p s b md="${3:-$CLAUDE_HOME/CLAUDE.md}"
   if dry "remove $comp: unmodified recorded files, its settings and its rules block"; then return; fi
-  case "$comp" in codex|cursor) ;; *) [ -f "$RECEIPT" ] && ok "settings.json: $(wbpy unmerge "$CLAUDE_HOME/settings.json" "$RECEIPT" "$comp") ($comp)" ;; esac
+  case "$comp" in codex|cursor|codex-vault|cursor-vault) ;; *) [ -f "$RECEIPT" ] && ok "settings.json: $(wbpy unmerge "$CLAUDE_HOME/settings.json" "$RECEIPT" "$comp") ($comp)" ;; esac
   if [ -n "${2:-}" ]; then wbpy block-remove "$md" "$2"; fi
   [ -f "$FILES" ] || return 0
   while IFS=$'\t' read -r c p s b; do
@@ -182,25 +181,12 @@ remove_component() { # remove_component <component> [block-name [target.md]]
   ok "removed: $comp"
 }
 
-# agent_rules <out>: the rules block for agents without our skills and hooks (drops what needs OMC,
-# the other skills or Claude Code subagents)
-agent_rules() {
-  python3 -I -c '
-import re, sys
-out = []
-for line in open(sys.argv[1], encoding="utf-8").read().splitlines():
-    if "oh-my-claudecode" in line or "parallel-delegation" in line:
-        continue
-    out.append(line.replace(" (details in the `work-mode` skill)", ""))
-open(sys.argv[2], "w", encoding="utf-8").write(re.sub(r"\n{3,}", "\n\n", "\n".join(out)) + "\n")' "$WB/core/CLAUDE.md" "$1"
-}
-
 # Agent records live in $AFILES: point FILES at it while installing or removing an agent.
 with_agent_state() { local saved="$FILES"; FILES="$AFILES"; "$@"; local rc=$?; FILES="$saved"; return $rc; }
 has_component() { [ -f "$FILES" ] && awk -F'\t' -v c="$1" '$1==c {f=1} END {exit !f}' "$FILES"; }
 
 install_agent() { # install_agent codex|cursor   (run through with_agent_state)
-  local a="$1" tmp s dst; tmp="$(mktemp -d)"; agent_rules "$tmp/AGENTS.md"
+  local a="$1" tmp s dst; tmp="$(mktemp -d)"; cp "$WB/core/CLAUDE.md" "$tmp/AGENTS.md"
   echo "== agent: $a"
   [ "$DRY" = 1 ] || mkdir -p "$AGENT_STATE"
   case "$a" in
@@ -212,6 +198,9 @@ install_agent() { # install_agent codex|cursor   (run through with_agent_state)
       warn "Cursor has no global rules file: paste $SHARE/rules/AGENTS.md into Settings > Rules, or copy it to a project's AGENTS.md" ;;
   esac
   for s in $PORTABLE_SKILLS; do install_tree "$a" "$WB/core/skills/$s" "$dst/$s"; done
+  case " $OPTIONALS " in
+    *" vault "*) install_tree "$a-vault" "$WB/optional/vault/skill" "$dst/vault" ;;
+  esac
   ok "skills: $PORTABLE_SKILLS ($dst)"
   rm -rf "$tmp"
 }
@@ -223,9 +212,11 @@ if [ "$UNINSTALL" = 1 ]; then
   wbpy check "$CLAUDE_HOME/settings.json" "$CLAUDE_HOME/CLAUDE.md" CORE $(upper "$ALL_OPTIONALS")
   installed=" $(awk -F'\t' '$1=="optional"{print $2}' "$FILES" 2>/dev/null | tr '\n' ' ' || true) "
   targets=""
-  for o in ${OPTIONALS:-$( if [ "$AGENTS_GIVEN" = 0 ] || has_agent claude; then echo "$installed"; fi )}; do
-    case "$installed" in *" $o "*) targets="$targets $o" ;; *) warn "$o is not installed here: skipped" ;; esac
-  done
+  if [ "$AGENTS_GIVEN" = 0 ] || has_agent claude; then
+    for o in ${OPTIONALS:-$installed}; do
+      case "$installed" in *" $o "*) targets="$targets $o" ;; *) warn "$o is not installed here: skipped" ;; esac
+    done
+  fi
   for o in $targets; do
     echo "== optional: $o"; optional_args "$o"
     if [ "$DRY" = 1 ]; then bash "$WB/optional/$o/setup.sh" --uninstall --dry-run "${OPT_ARGS[@]}"
@@ -233,9 +224,16 @@ if [ "$UNINSTALL" = 1 ]; then
     remove_component "$o" "$(upper "$o")"
   done
   for a in codex cursor; do   # other agents: named by --agent, or everything when no flag narrows it
-    { { [ "$AGENTS_GIVEN" = 1 ] && has_agent "$a"; } || { [ "$AGENTS_GIVEN" = 0 ] && [ -z "$OPTIONALS" ]; }; } || continue
+    { { [ "$AGENTS_GIVEN" = 1 ] && has_agent "$a"; } || { [ "$AGENTS_GIVEN" = 0 ]; }; } || continue
+    if [ -n "$OPTIONALS" ]; then
+      case " $OPTIONALS " in
+        *" vault "*) with_agent_state remove_component "$a-vault" ;;
+      esac
+      continue
+    fi
     with_agent_state has_component "$a" || { [ "$AGENTS_GIVEN" = 0 ] || warn "$a is not installed here: skipped"; continue; }
     echo "== agent: $a"
+    with_agent_state remove_component "$a-vault"
     if [ "$a" = codex ]; then
       [ -f "$AGENT_STATE/codex-md" ] && CODEX_MD="$(cat "$AGENT_STATE/codex-md")"   # where install put it (CODEX_HOME may differ now)
       with_agent_state remove_component codex CORE "$CODEX_MD"
@@ -263,7 +261,15 @@ fi
 echo "== 1. Prerequisites"
 for c in git python3 sha256sum; do command -v "$c" >/dev/null || fail "missing '$c'"; done
 ok "git, python3"
-[ -z "$OPTIONALS" ] || has_agent claude || fail "optionals are Claude Code only: add claude to --agent (or drop --with/--all)"
+if ! has_agent claude; then
+  for o in $OPTIONALS; do [ "$o" = vault ] || fail "$o requires Claude Code"; done
+  case " $OPTIONALS " in
+    *" vault "*)
+      optional_args vault
+      if [ "$DRY" = 1 ]; then OPT_ARGS+=(--dry-run); fi
+      bash "$WB/optional/vault/setup.sh" --scaffold-only "${OPT_ARGS[@]}" ;;
+  esac
+fi
 # The Claude Code part (steps 1 to Plugins) runs only when claude is among the agents; its body is not indented.
 if has_agent claude; then
 wbpy check "$CLAUDE_HOME/settings.json" "$CLAUDE_HOME/CLAUDE.md" CORE $(upper "$ALL_OPTIONALS") || fail "fix the file above before installing (nothing was changed)"
@@ -280,8 +286,8 @@ fi
 
 echo "== 2. Core ($CLAUDE_HOME)"
 [ "$DRY" = 1 ] || mkdir -p "$STATE" "$CLAUDE_HOME"
-for s in work-mode parallel-delegation handoff; do install_tree core "$WB/core/skills/$s" "$CLAUDE_HOME/skills/$s"; done
-ok "skills: work-mode, parallel-delegation, handoff"
+for s in $PORTABLE_SKILLS; do install_tree core "$WB/core/skills/$s" "$CLAUDE_HOME/skills/$s"; done
+ok "skills: $PORTABLE_SKILLS"
 install_tree core "$WB/core/hooks" "$CLAUDE_HOME/hooks/workbench"
 ok "hook: session-start-handoffs"
 frag="$WB/core/settings.fragment.json"
@@ -318,7 +324,7 @@ for a in codex cursor; do if has_agent "$a"; then with_agent_state install_agent
 
 echo
 echo "== Done. Next steps:"
-if ! has_agent claude; then echo "  Codex/Cursor got the rules and the handoff skill; open a new session there to load them."; fi
+if ! has_agent claude; then echo "  Codex/Cursor got the shared Workbench skills; open a new session there to load them."; fi
 if has_agent claude; then cat <<TXT
   1. Open Claude Code and run /oh-my-claudecode:omc-setup (adds the OMC rules block and the status line HUD).
   2. Check: /skills lists work-mode, parallel-delegation, handoff; /plugin shows the 2 mods.

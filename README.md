@@ -44,14 +44,35 @@ Requirements: Linux or WSL, `git` and `python3`. Claude Code must already be ins
 
 ## Other agents (Codex, Cursor)
 
-`./install.sh --agent codex,cursor` (or `--agent claude,codex,cursor`) installs the portable part: the rules text and the `handoff` skill. Hooks, mods, optionals and the `work-mode` and `parallel-delegation` skills stay Claude Code only, because they lean on oh-my-claudecode and Claude Code tools. `--with`/`--all` need `claude` among the agents.
+Install the same Workbench rules, `work-mode`, `parallel-delegation`, `handoff`, and `workbench-sessions` for each terminal agent:
+
+```bash
+./install.sh --agent claude,codex,cursor --with vault --vault-path "$HOME/vault"
+```
 
 | Agent | Rules | Skills |
-|---|---|---|
-| Codex | A marked block in `${CODEX_HOME:-~/.codex}/AGENTS.md` | `~/.agents/skills/handoff` |
-| Cursor | No global rules file exists: paste `~/.local/share/workbench/rules/AGENTS.md` into Settings → Rules, or copy it to a project's `AGENTS.md` | `~/.cursor/skills/handoff` |
+| --- | --- | --- |
+| Claude Code | `CLAUDE.md` in `CLAUDE_CONFIG_DIR` or `~/.claude` | `skills/` in the same config directory |
+| Codex | `${CODEX_HOME:-~/.codex}/AGENTS.md` | `~/.agents/skills` |
+| Cursor Agent | Use the `AGENTS.md` installed at `~/.local/share/workbench/rules/AGENTS.md` as the project rules or paste it into Cursor user rules | `~/.cursor/skills` |
 
-Cursor also reads `~/.agents/skills`, so with both agents it may list the skill twice. Paths follow each vendor's docs (Codex: AGENTS.md and `.agents/skills`; Cursor: skills, no file-based user rules); neither agent has been run against this installer, only the files it writes are tested. Remove with `./uninstall.sh --agent codex` (or `cursor`). These files are shared by all your Claude config dirs, so one removal applies everywhere; `./uninstall.sh --agent claude` also removes the optionals. Hermes is not covered yet.
+Claude retains its native hooks, mods and plugin integrations. The shared workflows include steps for agents without those plugins. `vault` is available for every agent. Other optionals require Claude Code. Native sandboxing, approval prompts, model routing and automatic context warnings depend on the agent. Cursor can also discover the Codex skill directory and might list duplicate skills.
+
+### Exchange messages from terminal sessions
+
+Start the native agents in separate terminals. Record each session ID from its CLI (Claude `/resume`, Codex `/status`, Cursor `agent ls`). For each session, register its native ID and its checkout. For example, from the appropriate checkout for each terminal:
+
+```bash
+wb="$HOME/.agents/skills/workbench-sessions/workbench.py" # or the same script from another agent's skill folder
+python3 "$wb" attach feature impl codex "$CODEX_SESSION_ID"
+python3 "$wb" attach feature review claude "$CLAUDE_SESSION_ID"
+python3 "$wb" attach feature second-review cursor "$CURSOR_SESSION_ID"
+python3 "$wb" sessions feature
+```
+
+In the Codex session ask: “Use `workbench-sessions` to send `review` in task `feature` a request to review my changes, from `impl`.” In Claude ask: “Check the Workbench inbox for `feature/review` and reply to the request.” In Codex ask to read the reply. Either agent may start the exchange, including `second-review` from Cursor Agent. Start a resumed session with `python3 "$wb" resume feature review` to restore its checkout and mailbox identity; read its inbox on the next turn. When the vault is outside the checkout, add `--vault "$HOME/vault"` to grant the native session an additional working directory. Messages are queued locally and acknowledged explicitly. For concurrent edits, register each writer in its own worktree. See [the session skill](core/skills/workbench-sessions/SKILL.md) for the raw CLI.
+
+Uninstalling an agent removes its unmodified integration files. The local message database (`~/.local/state/workbench/sessions.sqlite3`) and vault contents remain.
 
 ## How it installs
 

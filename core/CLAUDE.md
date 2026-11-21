@@ -21,6 +21,8 @@ On trivial requests, use judgment. Project rules (`CLAUDE.md` / `AGENTS.md` in t
 - **Outbound writes are drafts first.** Push, PR, deploy, migrations, messages, tickets and comments on external services:
   prepare them, then ask. The user approves and sends.
 - **Critical review = annotate and question.** Never rewrite the original unless explicitly asked.
-- **Code changes** follow `oh-my-claudecode:minimal-code-discipline`, including inside subagent prompts.
+- **Code changes** follow the `work-mode` coding workflow, including inside subagent prompts.
 - **Subagents** always get an explicit `model`; see the `parallel-delegation` skill.
 - **Context at ~60-70%:** propose a session handoff at the next task boundary (`handoff` skill).
+- **Collaboration** uses `workbench-sessions` for a shared inbox across agents.
+- **Vault** tasks use the `vault` skill when configured. The vault’s own rules govern its content.

@@ -1,6 +1,6 @@
 ---
 name: work-mode
-description: Day-to-day working rules for Claude Code sessions. Use when starting or closing a task, reviewing a document critically, answering a list of questions, triaging or prioritizing work, drafting a message or ticket for someone, touching LLM agents or API integrations, editing a repo, or running several sessions at once.
+description: Day-to-day working rules for Workbench sessions. Use when starting or closing a task, reviewing a document critically, answering a list of questions, triaging or prioritizing work, drafting a message or ticket for someone, touching LLM agents or API integrations, editing a repo, or running several sessions at once.
 ---
 
 # Work mode
@@ -16,10 +16,10 @@ Write one line before the action:
 If none applies: `[SKILL: none] <action> | why: <why none fits>`.
 Prefer oh-my-claudecode (plan, orchestrate, review) and mattpocock-skills.
 
-**OMC activation** (automatic for some actions; a recommendation for the rest):
+**Workflow selection.** Follow the workflow in the table on every agent. When OMC is available, use its native skills as follows:
 - INVOKE without asking (via Skill): `oh-my-claudecode:plan` (plan, prioritize), `oh-my-claudecode:research` (external research), `oh-my-claudecode:review` (review finished work), `oh-my-claudecode:verify` (before saying "done"). They read, plan or verify.
 - When you do NOT invoke OMC, write right after the skill line: `[OMC: recommend /oh-my-claudecode:<name>] <task> | because: <one sentence>`. Applies to actions that execute, write or need a long interaction (`execute`, `ralplan`, `deep-interview`). The user decides.
-- If no OMC skill fits: `[OMC: none] <reason>`. Do not force it.
+- If OMC is unavailable, use the workflow steps below and the locally available equivalent skills. Follow the same scope and approval rules below. If no OMC skill fits: `[OMC: none] <reason>`.
 - These are instructions, not guarantees: only a hook makes activation deterministic.
 
 Action → skill map:
@@ -41,6 +41,14 @@ Action → skill map:
 | Edit a skill or CLAUDE.md | `mattpocock-skills:writing-for-agents` |
 | Hand the context over to a new session | `handoff` (rule 9) |
 | Split work into subagents | `parallel-delegation` |
+
+Use these steps when a mapped skill is unavailable:
+
+- Plan: identify constraints, order small changes, and give each step a verification criterion.
+- Research: read local sources and primary documentation, cite evidence, and flag uncertainty.
+- Execute: confirm the scope, inspect existing behavior, change only what is needed, and verify through the normal entry point.
+- Diagnose: reproduce the failure, isolate the cause, and verify the fix against the same case.
+- Review and verify: compare results with the request, run relevant checks, and list verified and unverified items.
 
 ## 2. Critical review: annotate and question, never rewrite
 
@@ -122,4 +130,4 @@ You cannot see the context percentage. The signals are the status line (the user
 - **Limit:** 2-3 active sessions, each named after its task (`/rename`).
 - **Same repo, two sessions editing:** the second works in a worktree with its own branch (`claude -w <name>` or `git worktree add`). Read-only or docs sessions can share the checkout.
 - **External state (databases, automation tools, trackers):** a worktree does not isolate it. One owner per resource, declared up front; the other sessions only read.
-- **Communication:** `SendMessage` with the name `ListAgents` shows. To wait for another session use `notify_when_idle: true`; do not poll a file in a loop.
+- **Communication:** use the `workbench-sessions` skill for discovery and messages across agents. Check the inbox on request or at a task boundary.
