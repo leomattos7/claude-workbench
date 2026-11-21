@@ -2,6 +2,7 @@
 """Local Workbench session registry and mailbox. Python standard library only."""
 
 import argparse
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -58,6 +59,8 @@ def parser():
     cli = argparse.ArgumentParser(description=__doc__)
     cli.add_argument("--state", type=Path, default=os.environ.get("WORKBENCH_STATE", Path.home() / ".local/state/workbench"))
     commands = cli.add_subparsers(dest="command", required=True)
+    harness = commands.add_parser("harness", help="show the shared rules version, state and vault")
+    harness.add_argument("--agent", choices=("claude", "codex", "cursor"), help="verify the installed rules for this agent")
     attach = commands.add_parser("attach", help="register an existing native session")
     attach.add_argument("task", type=label)
     attach.add_argument("session", type=label)
@@ -82,9 +85,41 @@ def parser():
     resume = commands.add_parser("resume", help="open a registered session in its native CLI")
     resume.add_argument("task", type=label)
     resume.add_argument("session", type=label)
-    resume.add_argument("--vault", type=Path, help="add the shared vault to the native workspace")
+    vault_options = resume.add_mutually_exclusive_group()
+    vault_options.add_argument("--vault", type=Path, help="add a specific vault to the native workspace")
+    vault_options.add_argument("--with-vault", action="store_true", help="add the configured vault to the native workspace")
     resume.add_argument("--listen", action="store_true", help="connect the Claude Code preview channel")
     return cli
+
+
+def harness_status(state, agent=None):
+    config = state / "harness.json"
+    data = json.loads(config.read_text(encoding="utf-8"))
+    if not isinstance(data, dict):
+        raise ValueError(f"{config}: expected a JSON object")
+    vault = data.get("vault")
+    if vault is not None and (not isinstance(vault, str) or not Path(vault).is_absolute()):
+        raise ValueError(f"{config}: vault must be an absolute path")
+    status = {"config": str(config), "state": str(state / "sessions.sqlite3"), "vault": vault,
+              "rules_sha256": data["rules_sha256"]}
+    if agent is None:
+        return status
+    home = Path.home()
+    paths = {
+        "claude": Path(os.environ.get("CLAUDE_CONFIG_DIR", home / ".claude")) / "CLAUDE.md",
+        "codex": Path(os.environ.get("CODEX_HOME", home / ".codex")) / "AGENTS.md",
+        "cursor": home / ".local/share/workbench/rules/AGENTS.md",
+    }
+    rules_file = paths[agent]
+    text = rules_file.read_text(encoding="utf-8")
+    if agent != "cursor":
+        blocks = re.findall(r"<!-- WORKBENCH:CORE:START(?: eof-nonl)? -->\n(.*?)<!-- WORKBENCH:CORE:END -->", text, re.S)
+        if len(blocks) != 1:
+            raise ValueError(f"expected one Workbench rules block in {rules_file}")
+        text = blocks[0]
+    digest = hashlib.sha256(text.strip("\r\n").encode("utf-8")).hexdigest()
+    return {**status, "agent": agent, "rules_file": str(rules_file), "installed_rules_sha256": digest,
+            "matches": digest == status["rules_sha256"]}
 
 
 def session(db, task, name):
@@ -193,6 +228,10 @@ def main(argv=None):
             if not body.strip() or len(body.encode("utf-8")) > 65536:
                 raise ValueError("provide a nonempty UTF-8 message of at most 64 KiB on stdin")
         args.state = args.state.resolve()
+        if args.command == "harness":
+            status = harness_status(args.state, args.agent)
+            print(json.dumps(status, ensure_ascii=True))
+            return 0 if status.get("matches", True) else 1
         old_umask = os.umask(0o077)
         try:
             args.state.mkdir(parents=True, exist_ok=True)
@@ -207,10 +246,16 @@ def main(argv=None):
         finally:
             os.umask(old_umask)
         if args.command == "resume":
-            return resume(result, args.state, args.vault, args.listen)
+            vault = args.vault
+            if args.with_vault:
+                configured = harness_status(args.state)["vault"]
+                if configured is None:
+                    raise ValueError("the Workbench has no configured vault")
+                vault = Path(configured)
+            return resume(result, args.state, vault, args.listen)
         print(json.dumps(result, ensure_ascii=True))
         return 0
-    except (OSError, sqlite3.Error, ValueError) as exc:
+    except (OSError, sqlite3.Error, KeyError, ValueError) as exc:
         print(f"workbench: {exc}", file=sys.stderr)
         return 1
 

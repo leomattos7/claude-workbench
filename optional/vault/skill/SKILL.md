@@ -5,6 +5,8 @@ description: Personal second brain (LLM Wiki, Karpathy model) at {{VAULT_PATH}}.
 
 # Vault
 
+When the shared Workbench configuration exists at `~/.local/state/workbench/harness.json`, resolve the `vault` field there first. A configured vault path replaces `{{VAULT_PATH}}` throughout this skill and its bootstrap instructions. For a standalone vault skill without a shared configuration, use the path shown here.
+
 1. Read `{{VAULT_PATH}}/CLAUDE.md`. It is the schema and the only source of the rules.
    If it does not exist, the vault is not set up: tell the user to run the vault setup instead of inventing a layout.
 2. Run the requested operation (ingest, query or review) exactly as that file defines it, using absolute vault paths.
