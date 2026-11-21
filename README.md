@@ -70,12 +70,14 @@ python3 "$wb" attach feature second-review cursor "$CURSOR_SESSION_ID"
 python3 "$wb" sessions feature
 ```
 
-In the Codex session ask: “Use `workbench-sessions` to send `review` in task `feature` a request to review my changes, from `impl`.” In Claude ask: “Check the Workbench inbox for `feature/review` and reply to the request.” In Codex ask to read the reply. Either agent may start the exchange, including `second-review` from Cursor Agent. Start a resumed session with `python3 "$wb" resume feature review` to restore its checkout and mailbox identity; read its inbox on the next turn. When the vault is outside the checkout, add `--vault "$HOME/vault"` to grant the native session an additional working directory. Messages are queued locally and acknowledged explicitly. For concurrent edits, register each writer in its own worktree. See [the session skill](core/skills/workbench-sessions/SKILL.md) for the raw CLI.
+In the Codex session ask: “Use `workbench-sessions` to send `review` in task `feature` a request to review my changes, from `impl`.” In Claude ask: “Check the Workbench inbox for `feature/review` and reply to the request.” In Codex ask to read the reply. Either agent may start the exchange, including `second-review` from Cursor Agent. Start a resumed session with `python3 "$wb" resume feature review` to restore its checkout and mailbox identity; read its inbox on the next turn. When the vault is outside the checkout, use `--with-vault` to grant the native session access to the vault selected at installation. Messages are queued locally and acknowledged explicitly. For concurrent edits, register each writer in its own worktree. See [the session skill](core/skills/workbench-sessions/SKILL.md) for the raw CLI.
 
 
 For automatic delivery to an open Claude Code terminal, close its existing terminal instance and reopen the same session with `python3 "$wb" resume feature review --listen`. The launcher adds a local Claude Code Channel for that session. This is an explicit opt-in to Anthropic's research preview and Claude may show a channel consent prompt at startup. Once connected, incoming messages wake the session. The mailbox retains the original message until the session acknowledges or replies, and native permission prompts still apply. The channel listens only to the named task and session and accepts no network connections.
 
-Uninstalling an agent removes its unmodified integration files. The local message database (`~/.local/state/workbench/sessions.sqlite3`) and vault contents remain.
+The Workbench keeps the shared vault path and rules fingerprint in `~/.local/state/workbench/harness.json`. Use `workbench.py harness --agent claude` and `workbench.py harness --agent codex` from the respective installed skill directories to compare each installed rules block with that fingerprint. The command reports Cursor's installed rules template when called with `--agent cursor`. Later installs inherit the configured vault unless a different `--vault-path` is supplied.
+
+Uninstalling an agent removes its unmodified integration files. The local state directory (`~/.local/state/workbench`) and vault contents remain.
 
 ## How it installs
 

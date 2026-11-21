@@ -26,6 +26,7 @@ same_json() { python3 -I -c 'import json,sys; sys.exit(json.load(open(sys.argv[1
 
 echo "== installer"
 snap > "$T/s0"; bash "$WB/install.sh" --all --dry-run --no-plugins --vault-path "$HOME/vault" >/dev/null 2>&1; snap > "$T/s1"
+t "dry-run shows proposed rule and settings additions" "bash '$WB/install.sh' --dry-run --no-plugins > '$T/core-preview' && grep -Fq '+<!-- WORKBENCH:CORE:START -->' '$T/core-preview' && grep -Fq '+ permissions.ask:' '$T/core-preview' && grep -Fq 'harness.json (proposed)' '$T/core-preview'"
 t "dry-run writes nothing" "cmp -s '$T/s0' '$T/s1'"
 t "install --all exits 0" "bash '$WB/install.sh' --all --no-plugins --vault-path '$HOME/vault'"
 snap > "$T/s2"; bash "$WB/install.sh" --all --no-plugins --vault-path "$HOME/vault" >/dev/null 2>&1; snap > "$T/s3"
@@ -270,6 +271,9 @@ U
 t "uninstall removes cursor files and state" "[ ! -e '$HOME/.cursor/skills/handoff' ] && [ ! -e '$HOME/.local/share/workbench' ]"
 fresh shared-vault; I --agent claude,codex,cursor --with vault --vault-path "$HOME/Shared Vault"
 t "all agents get the same vault skill and path" "diff -r '$C/skills/vault' '$HOME/.agents/skills/vault' && diff -r '$HOME/.agents/skills/vault' '$HOME/.cursor/skills/vault' && grep -Fq '$HOME/Shared Vault' '$HOME/.agents/skills/vault/SKILL.md'"
+t "all agents resolve the same vault and match their actual rules fingerprint" "python3 -I '$WB/tests/check_installed_harness.py' '$HOME/Shared Vault'"
+t "harness status leaves the mailbox database absent" "[ ! -e '$HOME/.local/state/workbench/sessions.sqlite3' ]"
+t "later agent install inherits the existing shared vault" "I --agent codex --with vault && grep -Fq '$HOME/Shared Vault' '$HOME/.agents/skills/vault/SKILL.md' && [ ! -e '$HOME/vault' ]"
 U --agent codex --with vault
 t "scoped vault uninstall keeps peer skills and contents" "[ ! -e '$HOME/.agents/skills/vault' ] && [ -f '$HOME/.agents/skills/workbench-sessions/workbench.py' ] && [ -f '$C/skills/vault/SKILL.md' ] && [ -f '$HOME/Shared Vault/manifest.tsv' ]"
 U

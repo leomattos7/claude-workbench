@@ -22,13 +22,14 @@ set -euo pipefail
 WB="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CLAUDE_HOME="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"; CLAUDE_HOME="${CLAUDE_HOME%/}"
 SHARE="$HOME/.local/share/workbench"
+HARNESS_CONFIG="$HOME/.local/state/workbench/harness.json"
 STATE="$SHARE/state/$(printf '%s' "$CLAUDE_HOME" | sha1sum | cut -c1-12)"   # one per config dir
 RECEIPT="$STATE/receipt.json"; FILES="$STATE/files.tsv"
 AGENT_STATE="$SHARE/state/agents"; AFILES="$AGENT_STATE/files.tsv"   # Codex/Cursor files are shared by every Claude config dir
 WB_STAMP="$(date +%Y%m%d%H%M%S)"
 ALL_OPTIONALS="vault accounts wsl briefing"   # what --all installs
 KNOWN_OPTIONALS="$ALL_OPTIONALS panels token-keeper"   # panels removes HUD items and token-keeper rewrites credential files: never implied by --all
-OPTIONALS=""; DRY=0; PLUGINS=1; UNINSTALL=0; VAULT_PATH="$HOME/vault"
+OPTIONALS=""; DRY=0; PLUGINS=1; UNINSTALL=0; VAULT_PATH="$HOME/vault"; VAULT_PATH_GIVEN=0
 MIN_MODS_VERSION="2.1.287"
 AGENTS="claude"; AGENTS_GIVEN=0; KNOWN_AGENTS="claude codex cursor"
 CODEX_MD="${CODEX_HOME:-$HOME/.codex}/AGENTS.md"   # Codex global instructions
@@ -47,7 +48,7 @@ while [ $# -gt 0 ]; do
     --agent=*) AGENTS="${1#--agent=}"; AGENTS="${AGENTS//,/ }"; AGENTS_GIVEN=1 ;;
     --dry-run) DRY=1 ;;
     --no-plugins) PLUGINS=0 ;;
-    --vault-path) need "$1" "${2:-}"; VAULT_PATH="$2"; shift ;;
+    --vault-path) need "$1" "${2:-}"; VAULT_PATH="$2"; VAULT_PATH_GIVEN=1; shift ;;
     --uninstall) UNINSTALL=1 ;;
     -h|--help) sed -n '2,18p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "unknown option: $1 (see --help)" >&2; exit 1 ;;
@@ -134,7 +135,8 @@ json.dump(d, open(sys.argv[1], "w"))' "$frag"
   if [ "$DRY" = 1 ]; then
     tmp="$(mktemp)"; [ -f "$CLAUDE_HOME/settings.json" ] && cp -L "$CLAUDE_HOME/settings.json" "$tmp"
     out="$(WB_STAMP= wbpy merge "$tmp" "$frag" - "$comp")"; rm -f "$tmp"
-    echo "  [dry-run] settings.json: $out ($comp)"
+    echo "  [dry-run] $CLAUDE_HOME/settings.json ($comp)"
+    printf '%s\n' "$out"
   else
     out="$(wbpy merge "$CLAUDE_HOME/settings.json" "$frag" "$RECEIPT" "$comp")"
     ok "settings.json: $out ($comp)"
@@ -144,14 +146,19 @@ json.dump(d, open(sys.argv[1], "w"))' "$frag"
 
 insert_block() { # insert_block <NAME> <block-file> [target.md]  (default: CLAUDE.md of the Claude config dir)
   local tmp md="${3:-$CLAUDE_HOME/CLAUDE.md}"; tmp="$(mktemp)"; render "$2" "$tmp"
-  if [ "$DRY" = 1 ]; then echo "  [dry-run] $md: insert/refresh block $1"
+  if [ "$DRY" = 1 ]; then wbpy block-preview "$md" "$tmp" "$1"
   else wbpy block-insert "$md" "$tmp" "$1" || { rm -f "$tmp"; exit 1; }; ok "$md: block $1"; fi
   rm -f "$tmp"
 }
 
 optional_args() { OPT_ARGS=(); case "$1" in vault) OPT_ARGS=(--path "$VAULT_PATH") ;; token-keeper) [ "$PLUGINS" = 1 ] || OPT_ARGS=(--no-plugins) ;; esac; }
 # remember the vault path so uninstall compares against the same rendered skill
-if [ "$VAULT_PATH" = "$HOME/vault" ] && [ -f "$STATE/vault-path" ] && [ "$UNINSTALL" = 1 ]; then VAULT_PATH="$(cat "$STATE/vault-path")"; fi
+if [ "$UNINSTALL" = 1 ] && [ "$VAULT_PATH_GIVEN" = 0 ] && [ -f "$STATE/vault-path" ]; then
+  VAULT_PATH="$(cat "$STATE/vault-path")"
+elif [ "$UNINSTALL" = 0 ]; then
+  configured_vault="$(wbpy harness-vault "$HARNESS_CONFIG")"
+  if [ "$VAULT_PATH_GIVEN" = 0 ] && [ -n "$configured_vault" ]; then VAULT_PATH="$configured_vault"; fi
+fi
 
 install_optional() {
   local o="$1" d="$WB/optional/$1"; optional_args "$o"
@@ -321,6 +328,10 @@ fi
 fi   # end of the Claude Code part
 
 for a in codex cursor; do if has_agent "$a"; then with_agent_state install_agent "$a"; fi; done
+
+shared_vault=""
+case " $OPTIONALS " in *" vault "*) shared_vault="$VAULT_PATH" ;; esac
+wbpy harness-install "$HARNESS_CONFIG" "$WB/core/CLAUDE.md" "$shared_vault" "$DRY"
 
 echo
 echo "== Done. Next steps:"

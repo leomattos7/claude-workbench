@@ -80,8 +80,13 @@ class SharedWorkbenchTest(unittest.TestCase):
             stub.chmod(0o700)
             env = {**os.environ, "PATH": str(command_dir)}
             env.pop("WORKBENCH_STATE", None)
-            actual = self.cli("resume", "feature", agent, "--vault", str(vault), env=env)
+            (self.state / "harness.json").write_text(json.dumps({"vault": str(vault), "rules_sha256": "fixture"}),
+                                                       encoding="utf-8")
+            options = ["--with-vault"] if agent == "claude" else ["--vault", str(vault)]
+            actual = self.cli("resume", "feature", agent, *options, env=env)
             self.assertEqual(actual, [[flag, native, "--add-dir", str(vault)], str(self.root), "feature", agent, str(self.state)])
+            ordinary = self.cli("resume", "feature", agent, env=env)
+            self.assertEqual(ordinary[0], [flag, native])
 
     def test_claude_channel_wakes_only_for_the_registered_inbox(self):
         self.register("claude", "claude")

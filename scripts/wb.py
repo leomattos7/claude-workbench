@@ -12,6 +12,8 @@ recorded in the receipt, so unmerge removes exactly that and nothing the user ow
 Before the first rewrite of a file in a run, a real copy is saved as <file>.bak-$WB_STAMP.
 Writes are atomic and go through symlinks (a symlinked settings.json stays a symlink).
 """
+import difflib
+import hashlib
 import json
 import os
 import re
@@ -173,7 +175,7 @@ def find_block(text, name, md):
     return m
 
 
-def block_insert(md, block_file, name):
+def block_insert(md, block_file, name, preview=False):
     body = read_raw(block_file).strip("\r\n")
     text = read_raw(md) if os.path.exists(md) else ""
     m = find_block(text, name, md)
@@ -185,7 +187,12 @@ def block_insert(md, block_file, name):
         flag = NONL if text and not text.endswith("\n") else ""
         sep = "" if not text else ("\n\n" if flag else "\n")
         new = f"{text}{sep}<!-- WORKBENCH:{name}:START{flag} -->\n{body}\n<!-- WORKBENCH:{name}:END -->\n"
-    if new != text:
+    if new == text:
+        return
+    if preview:
+        sys.stdout.writelines(difflib.unified_diff(text.splitlines(True), new.splitlines(True), n=0,
+                                                   fromfile=md, tofile=f"{md} (proposed)"))
+    else:
         write_raw(md, new)
 
 
@@ -213,6 +220,34 @@ def block_remove(md, name):
         os.remove(md)  # it only held workbench blocks, so it did not exist before
 
 
+def harness_path(config):
+    data = load_json(config, {})
+    vault = data.get("vault")
+    if vault is not None and (not isinstance(vault, str) or not os.path.isabs(vault)):
+        die(f"{config}: vault must be an absolute path")
+    return vault
+
+
+def install_harness(config, rules, vault, preview):
+    previous = read_raw(config) if os.path.exists(config) else ""
+    vault = os.path.realpath(vault) if vault else harness_path(config)
+    rules_bytes = read_raw(rules).replace("\r\n", "\n").strip("\r\n").encode("utf-8")
+    current = load_json(config, {})
+    shared = {"vault": vault, "rules_sha256": hashlib.sha256(rules_bytes).hexdigest()}
+    updated = json.dumps({**current, **shared}, indent=2) + "\n"
+    if previous == updated:
+        return
+    if preview:
+        before = {key: current[key] for key in shared if key in current}
+        old_settings = json.dumps(before, indent=2) + "\n"
+        new_settings = json.dumps(shared, indent=2) + "\n"
+        sys.stdout.writelines(difflib.unified_diff(old_settings.splitlines(True), new_settings.splitlines(True),
+                                                   fromfile=config, tofile=f"{config} (proposed)"))
+    else:
+        os.makedirs(os.path.dirname(config), mode=0o700, exist_ok=True)
+        write_raw(config, updated)
+
+
 def main(argv):
     cmd = argv[1] if len(argv) > 1 else ""
     if cmd == "check" and len(argv) >= 4:
@@ -234,6 +269,11 @@ def main(argv):
             receipt = load_json(receipt_path, {})
             receipt.setdefault(comp, []).extend(ops)
             save_json(receipt_path, receipt, backup=False)
+        if receipt_path == "-":
+            for operation in ops:
+                path = ".".join(operation["path"])
+                detail = json.dumps(operation.get("value", {}), ensure_ascii=True)
+                print(f"  + {path}: {detail}")
         print(f"{len(ops)} setting(s) added")
     elif cmd == "unmerge" and len(argv) == 5:
         settings, receipt_path, comp = argv[2:]
@@ -245,6 +285,13 @@ def main(argv):
             save_json(settings, cur)
         save_json(receipt_path, receipt, backup=False)
         print(f"{len(ops)} setting(s) removed")
+    elif cmd == "harness-vault" and len(argv) == 3:
+        print(harness_path(argv[2]) or "")
+    elif cmd == "harness-install" and len(argv) == 6:
+        config, rules, vault, dry = argv[2:]
+        install_harness(config, rules, vault, dry == "1")
+    elif cmd == "block-preview" and len(argv) == 5:
+        block_insert(*argv[2:], preview=True)
     elif cmd == "block-insert" and len(argv) == 5:
         block_insert(*argv[2:])
     elif cmd == "block-remove" and len(argv) == 4:
