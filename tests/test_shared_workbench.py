@@ -4,11 +4,13 @@ import os
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from queue import Queue
+import runpy
 import shutil
 import subprocess
 import sys
 from tempfile import TemporaryDirectory
 from threading import Thread
+import time
 import unittest
 import uuid
 
@@ -143,6 +145,30 @@ class SharedWorkbenchTest(unittest.TestCase):
                 self.assertEqual(decisions[1]["updatedInput"], {"file_path": str(marker), "content": "probe"})
             self.assertEqual(json.loads((root / "relayed.json").read_text(encoding="utf-8")), choice)
             self.assertFalse(marker.exists())
+
+    def test_claude_approval_probe_rejects_wrong_or_expired_input(self):
+        probe = runpy.run_path(str(REPO / "tests/claude_approval_probe.py"))
+        submit = probe["submit_decision"]
+        with self.assertRaisesRegex(RuntimeError, "no decision was sent"):
+            submit(self.root, "deny", "approve", time.monotonic() + 10)
+        with self.assertRaisesRegex(RuntimeError, "approval window expired"):
+            submit(self.root, "approve", "approve", time.monotonic() - 1)
+        self.assertFalse((self.root / "decision.json").exists())
+        submit(self.root, "deny", "deny", time.monotonic() + 10)
+        self.assertEqual(json.loads((self.root / "decision.json").read_text(encoding="utf-8")), "deny")
+
+    def test_claude_approval_probe_requires_matching_denial_and_acknowledgment(self):
+        probe = runpy.run_path(str(REPO / "tests/claude_approval_probe.py"))
+        verify = probe["verify_result"]
+        marker = self.root / "marker"
+        request = {"tool_use_id": "toolu_probe"}
+        denial = {"tool_name": "Write", "tool_use_id": "toolu_probe", "tool_input": {"file_path": str(marker)}}
+        result = {"is_error": False, "result": probe["DENIED_MARKER"], "permission_denials": [denial]}
+        self.assertEqual(verify(result, "deny", marker, request), probe["DENIED_MARKER"])
+        for change in ({"result": "Done"}, {"permission_denials": []}, {"is_error": True},
+                       {"permission_denials": [{**denial, "tool_use_id": "wrong"}]}):
+            with self.assertRaises(RuntimeError):
+                verify({**result, **change}, "deny", marker, request)
 
     def test_concurrent_vault_writes_require_merging_stale_index(self):
         vault = self.root / "Vault with spaces"
