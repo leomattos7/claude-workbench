@@ -104,7 +104,7 @@ tests/run.sh    # install / idempotency / uninstall in a throwaway HOME, hooks, 
 ```
 
 
-To verify Claude's approval round trip against the real CLI, run `python3 -I tests/claude_approval_probe.py` from a terminal with working Claude authentication. It asks for `approve` and then `deny` on separate disposable writes, and checks that the file is absent before the decision, created on approval, and still absent on denial. The probe uses a dedicated workspace and an MCP permission prompt tool. It leaves user configuration and vault files untouched.
+To verify Claude's approval round trip against the real CLI, run `python3 -I tests/claude_approval_probe.py` from a terminal with working Claude authentication. It asks for `approve` and then `deny` on separate disposable writes, and checks that the file is absent before the decision, created on approval, and still absent on denial. On denial, it also checks Claude’s structured tool denial and the final acknowledgment. The probe uses a disposable workspace and a dedicated MCP permission prompt tool. Claude can still load the current profile’s rules and hooks. The probe itself does not edit user configuration or vault files.
 
 ## Credits
 
