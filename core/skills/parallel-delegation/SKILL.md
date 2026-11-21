@@ -1,6 +1,6 @@
 ---
 name: parallel-delegation
-description: How to split a task into parallel subagents and pick a model for each. Use when planning or running work with 2 or more independent parts, before calling the Agent tool, and when the user asks for parallelism, subagents or delegation. Do not use for single-part tasks.
+description: How to split a task into parallel subagents and pick a model for each. Use when planning or running work with 2 or more independent parts, before calling the provider’s delegation tool, and when the user asks for parallelism, subagents or delegation. Do not use for single-part tasks.
 ---
 
 # Parallel delegation
@@ -18,9 +18,9 @@ Do not parallelize failures that may share a cause (fixing one may fix the rest)
 
 ## 2. Dispatch
 
-- Emit all `Agent` calls in the SAME response. One call per response runs sequentially.
+- Dispatch independent tasks together when the provider supports parallel calls.
 - Prefer 3 to 5 subagents.
-- Always pass `subagent_type`. Workbench denies `Agent(fork)` in settings because a fork inherits the parent's model and ignores `model`.
+- Choose an explicit role and model for each dispatch. If the native tool cannot select the model, use an explicitly configured peer session or perform the task in the current session. Claude Code exposes the role as `subagent_type`.
 - Long-running orchestration modes (agent teams, `ralph`, `autopilot`, `team`) only when the user asks for them explicitly.
 
 ## 3. Write each subagent's prompt
@@ -33,20 +33,20 @@ The subagent starts without your context. Each prompt carries:
 
 Paste error messages and test names into the prompt instead of making the agent rediscover them.
 
-A subagent that writes or changes code: include "Follow `oh-my-claudecode:minimal-code-discipline` (invoke the skill before editing)". Why: subagents do not inherit the session and the skill does not load by itself.
+A subagent that writes or changes code: include "Follow the `work-mode` coding workflow before editing". Why: subagents do not inherit the session and the skill does not load by itself.
 
 ## 4. Pick the model, always explicitly
 
-Pass `model` on every call. Why: an omitted model inherits the session's, usually the most expensive, and cancels the savings.
+Select the model on every dispatch. Why: an omitted model inherits the session's, usually the most expensive, and cancels the savings.
 
-Before dispatching, define each subagent's specific task and the model it needs, and tell the user both (one line per subagent). If the table below does not settle the model, ask the user (AskUserQuestion) before dispatching.
+Before dispatching, define each subagent's specific task and the model it needs, and tell the user both (one line per subagent). If the table below does not settle the model, ask the user before dispatching.
 
 | Task type | Model |
 |---|---|
-| Read, search, list, summarize, draft from a ready spec | haiku |
-| Implement 1-2 files with the code fully specified in the plan | haiku or sonnet |
+| Read, search, list, summarize, draft from a ready spec | economy tier (Claude: haiku) |
+| Implement 1-2 files with the code fully specified in the plan | haiku or standard tier (Claude: sonnet) |
 | Several files, debugging, integration, review | sonnet (floor for reviewers and for agents working from prose) |
-| Architecture, planning, final security review | opus |
+| Architecture, planning, final security review | highest reasoning tier (Claude: opus) |
 
 - A task that failed twice: go up one tier instead of retrying on the same one.
 - Turns weigh more than token price. A cheap model on a multi-step task may take 2-3x the turns and cost more overall.

@@ -4,9 +4,10 @@ set -euo pipefail
 
 usage() {
   cat <<'EOF'
-Usage: setup.sh [--path <dir>] [--dry-run] [--uninstall] [--help]
+Usage: setup.sh [--path <dir>] [--dry-run] [--scaffold-only] [--uninstall] [--help]
 
   --path <dir>  vault location (default: $HOME/vault)
+  --scaffold-only  set up vault files without installing the Claude skill
   --dry-run     print what would be done, write nothing
   --uninstall   remove the installed skill files that are unmodified (use the same --path as
                 at install); the vault and modified files are never touched
@@ -20,11 +21,13 @@ claude_home="${CLAUDE_HOME:-$HOME/.claude}"
 vault="$HOME/vault"
 dry=0
 uninstall=0
+scaffold_only=0
 
 while [ $# -gt 0 ]; do
   case "$1" in
     --path) [ $# -ge 2 ] || { echo "--path needs a value" >&2; exit 2; }; vault="$2"; shift ;;
     --dry-run) dry=1 ;;
+    --scaffold-only) scaffold_only=1 ;;
     --uninstall) uninstall=1 ;;
     -h|--help) usage; exit 0 ;;
     *) echo "unknown option: $1" >&2; usage >&2; exit 2 ;;
@@ -71,9 +74,11 @@ if [ "$uninstall" = 1 ]; then
   exit 0
 fi
 
+if [ "$scaffold_only" = 0 ]; then
 while IFS= read -r -d '' f; do
   install_skill_file "$f" "$skill_dst/${f#"$here"/skill/}"
 done < <(find "$here/skill" -type f -print0)
+fi
 
 # Scaffold: add only the files that are missing; never overwrite.
 while IFS= read -r -d '' f; do

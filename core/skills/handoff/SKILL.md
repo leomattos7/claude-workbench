@@ -1,11 +1,11 @@
 ---
 name: handoff
-description: Write or resume a session handoff so work continues cleanly in a new Claude Code session. Use when context is around 60-70% at a task boundary, when a context-guard warning appears, when the user asks for a handoff or to "turn the session over", and when resuming from a handoff file.
+description: Write or resume a session handoff so work continues cleanly in a new Workbench session. Use when context is around 60-70% at a task boundary, when a context-guard warning appears, when the user asks for a handoff or to "turn the session over", and when resuming from a handoff file.
 ---
 
 # Handoff
 
-A handoff is a short file that lets a fresh session pick up exactly where this one stopped. It lives in the project: `docs/handoffs/YYYY-MM-DD-HHMM-<topic>.md`. The workbench `SessionStart` hook lists the 3 most recent ones when a session starts in that project.
+A handoff is a short file that lets a fresh session pick up exactly where this one stopped. It lives in the project: `docs/handoffs/YYYY-MM-DD-HHMM-<topic>.md`. List the 3 most recent handoffs at a resumed task boundary. In Claude Code the Workbench `SessionStart` hook can also list them on startup.
 
 ## Writing one
 
