@@ -103,6 +103,9 @@ The rules and skills are instructions, not locks. A model can still ignore them.
 tests/run.sh    # install / idempotency / uninstall in a throwaway HOME, hooks, mods, leak check
 ```
 
+
+To verify Claude's approval round trip against the real CLI, run `python3 -I tests/claude_approval_probe.py` from a terminal with working Claude authentication. It asks for `approve` and then `deny` on separate disposable writes, and checks that the file is absent before the decision, created on approval, and still absent on denial. The probe uses a dedicated workspace and an MCP permission prompt tool. It leaves user configuration and vault files untouched.
+
 ## Credits
 
 - [oh-my-claudecode](https://github.com/Yeachan-Heo/oh-my-claudecode): orchestration, HUD, planning and verification workflows.
