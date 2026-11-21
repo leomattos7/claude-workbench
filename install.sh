@@ -259,6 +259,7 @@ if [ "$UNINSTALL" = 1 ]; then
     if [ -f "$AFILES" ] && ! grep -q . "$AFILES"; then rm -f "$AFILES" "$AGENT_STATE/codex-md"; fi
     [ -f "$AFILES" ] || { rm -f "$AGENT_STATE/codex-md"; rmdir "$AGENT_STATE" 2>/dev/null || true; }
     rmdir "$SHARE/state" "$SHARE" 2>/dev/null || true
+    [ -d "$SHARE/state" ] || rm -f "$HARNESS_CONFIG"   # nothing installed anywhere: the shared harness record goes too
   fi
   echo "== Done. Backups (*.bak-*) were kept. Plugins stay installed: remove with 'claude plugin uninstall <name>'."
   exit 0
@@ -331,7 +332,8 @@ for a in codex cursor; do if has_agent "$a"; then with_agent_state install_agent
 
 shared_vault=""
 case " $OPTIONALS " in *" vault "*) shared_vault="$VAULT_PATH" ;; esac
-wbpy harness-install "$HARNESS_CONFIG" "$WB/core/CLAUDE.md" "$shared_vault" "$DRY"
+rendered_rules="$(mktemp)"; render "$WB/core/CLAUDE.md" "$rendered_rules"   # hash what the agents actually receive
+wbpy harness-install "$HARNESS_CONFIG" "$rendered_rules" "$shared_vault" "$DRY"; rm -f "$rendered_rules"
 
 echo
 echo "== Done. Next steps:"

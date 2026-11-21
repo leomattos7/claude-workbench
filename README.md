@@ -108,6 +108,10 @@ tests/run.sh    # install / idempotency / uninstall in a throwaway HOME, hooks, 
 
 To verify Claude's approval round trip against the real CLI, run `python3 -I tests/claude_approval_probe.py` from a terminal with working Claude authentication. It asks for `approve` and then `deny` on separate disposable writes, and checks that the file is absent before the decision, created on approval, and still absent on denial. On denial, it also checks Claude’s structured tool denial and the final acknowledgment. The probe uses a disposable workspace and a dedicated MCP permission prompt tool. Claude can still load the current profile’s rules and hooks. The probe itself does not edit user configuration or vault files.
 
+The fingerprint is a hash of the rendered rules text and of the installed file, so it shows what was installed, not what a running session loaded. For Cursor it covers only the template file the installer writes; Cursor reads it only after you paste it into Settings > Rules or copy it to a project's `AGENTS.md`.
+
+After installing, run `python3 -I tests/claude_harness_probe.py` to check the installed harness with real programmatic Claude turns. It checks that the SessionStart hook injects a disposable handoff title into the agent's context, and that a `git push` to a disposable local remote is not completed without a human approval. It uses the real Claude configuration and disposable directories, and needs working Claude authentication. Each probe depends on the model's behavior, so repeat it before relying on one result.
+
 ## Credits
 
 - [oh-my-claudecode](https://github.com/Yeachan-Heo/oh-my-claudecode): orchestration, HUD, planning and verification workflows.
