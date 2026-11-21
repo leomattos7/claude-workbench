@@ -277,6 +277,15 @@ t "later agent install inherits the existing shared vault" "I --agent codex --wi
 U --agent codex --with vault
 t "scoped vault uninstall keeps peer skills and contents" "[ ! -e '$HOME/.agents/skills/vault' ] && [ -f '$HOME/.agents/skills/workbench-sessions/workbench.py' ] && [ -f '$C/skills/vault/SKILL.md' ] && [ -f '$HOME/Shared Vault/manifest.tsv' ]"
 U
+fresh harness-render; cp -r "$WB" "$T/wb-render"; printf '\nVault lives at {{VAULT_PATH}}\n' >> "$T/wb-render/core/CLAUDE.md"
+bash "$T/wb-render/install.sh" --no-plugins --agent claude,codex,cursor --with vault --vault-path "$HOME/Shared Vault" >/dev/null 2>&1
+t "rules fingerprint covers the rendered text the agents receive" "python3 -I '$WB/tests/check_installed_harness.py' '$HOME/Shared Vault'"
+bash "$T/wb-render/uninstall.sh" >/dev/null 2>&1
+t "full uninstall removes the shared harness record" "[ ! -e '$HOME/.local/state/workbench/harness.json' ]"
+fresh harness-keep; I --agent claude,codex; U --agent claude
+t "claude uninstall keeps the harness record while codex remains" "[ -f '$HOME/.local/state/workbench/harness.json' ]"
+U --agent codex
+t "last agent uninstall removes the harness record" "[ ! -e '$HOME/.local/state/workbench/harness.json' ]"
 fresh portable-vault; I --agent codex,cursor --with vault
 t "portable vault needs no Claude installation" "[ -f '$HOME/vault/manifest.tsv' ] && [ -f '$HOME/.agents/skills/vault/vault-write.py' ] && [ ! -e '$C/skills' ]"
 U
