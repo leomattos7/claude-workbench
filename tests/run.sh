@@ -215,19 +215,23 @@ cat > "$FAKEC/claude" <<'SH'
 # fake claude: logs arguments and remembers whether the token-keeper marketplace is configured
 case "$*" in
   --version) echo "2.1.325 (Claude Code)"; exit 0 ;;
-  "plugin marketplace list") [ -f "$CLAUDE_LOG.mk" ] && echo "  ❯ claude-token-keeper"; exit 0 ;;
+  "plugin marketplace list") [ -f "$CLAUDE_LOG.mk" ] && echo "  ❯ claude-token-keeper"; [ -f "$CLAUDE_LOG.mk2" ] && echo "  ❯ humans-md"; exit 0 ;;
   "plugin marketplace add "*token-keeper*) touch "$CLAUDE_LOG.mk" ;;
   "plugin marketplace remove claude-token-keeper") rm -f "$CLAUDE_LOG.mk" ;;
-  "plugin list") [ -f "$CLAUDE_LOG.pl" ] && echo "  ❯ token-keeper@claude-token-keeper"; exit 0 ;;
+  "plugin list") { [ -f "$CLAUDE_LOG.pl" ] && echo "  ❯ token-keeper@claude-token-keeper"; [ -f "$CLAUDE_LOG.pl2" ] && echo "  ❯ humans-md@humans-md"; }; exit 0 ;;
   "plugin install token-keeper@claude-token-keeper"*) touch "$CLAUDE_LOG.pl" ;;
   "plugin uninstall token-keeper@claude-token-keeper"*) rm -f "$CLAUDE_LOG.pl" ;;
+  "plugin marketplace add "*humans-md*) touch "$CLAUDE_LOG.mk2" ;;
+  "plugin marketplace remove humans-md") rm -f "$CLAUDE_LOG.mk2" ;;
+  "plugin install humans-md@humans-md"*) touch "$CLAUDE_LOG.pl2" ;;
+  "plugin uninstall humans-md@humans-md"*) rm -f "$CLAUDE_LOG.pl2" ;;
 esac
 echo "$*" >> "$CLAUDE_LOG"
 SH
 chmod +x "$FAKEC/claude"
 IP() { PATH="$FAKEC:$PATH" bash "$WB/install.sh" "$@" >/dev/null 2>&1; }
 UP() { PATH="$FAKEC:$PATH" bash "$WB/uninstall.sh" "$@" >/dev/null 2>&1; }
-tkreset() { rm -f "$CLAUDE_LOG" "$CLAUDE_LOG.mk" "$CLAUDE_LOG.pl"; : > "$CLAUDE_LOG"; }
+tkreset() { rm -f "$CLAUDE_LOG" "$CLAUDE_LOG.mk" "$CLAUDE_LOG.pl" "$CLAUDE_LOG.mk2" "$CLAUDE_LOG.pl2"; : > "$CLAUDE_LOG"; }
 fresh tk; tkreset; IP --all
 t "--all does not install token-keeper" "! grep -q token-keeper '$CLAUDE_LOG'"
 fresh tk2; tkreset; snap > "$T/k0"
@@ -246,6 +250,22 @@ fresh tk8; tkreset; touch "$CLAUDE_LOG.pl"; IP --with token-keeper; cp "$CLAUDE_
 t "a plugin that was already installed is neither re-installed nor uninstalled (the marketplace it added is removed)" "grep -q 'marketplace add .*token-keeper' '$T/inst.log' && ! grep -q 'plugin install token-keeper' '$T/inst.log' && ! grep -q 'plugin uninstall token-keeper' '$CLAUDE_LOG' && grep -qx 'plugin marketplace remove claude-token-keeper' '$CLAUDE_LOG'"
 fresh tk7; tkreset; IP --with token-keeper; UP
 t "full uninstall removes it too and leaves no state" "grep -qx 'plugin uninstall token-keeper@claude-token-keeper --scope user' '$CLAUDE_LOG' && [ ! -e '$HOME/.local/share/workbench' ]"
+echo "== humans-md (plugin optional, opt-in; fake claude CLI, no network)"
+fresh hm; tkreset; IP --all
+t "--all does not install humans-md" "! grep -q humans-md '$CLAUDE_LOG'"
+fresh hm2; tkreset; snap > "$T/h0"
+PATH="$FAKEC:$PATH" bash "$WB/install.sh" --with humans-md --dry-run > "$T/hm.dry" 2>&1; snap > "$T/h1"
+t "humans-md dry-run writes nothing, runs no command and shows the pinned commands" "cmp -s '$T/h0' '$T/h1' && [ ! -s '$CLAUDE_LOG' ] && grep -q 'claude plugin marketplace add cmdai-hq/humans-md-plugins@v0.3.2' '$T/hm.dry' && grep -q 'claude plugin install humans-md@humans-md --scope user' '$T/hm.dry'"
+mkdir -p "$HOME/.humans"; printf 'mine\n' > "$HOME/.humans/HUMANS.md"
+IP --with humans-md; snap > "$T/h2"; IP --with humans-md; snap > "$T/h3"
+t "humans-md: second install changes no file" "cmp -s '$T/h2' '$T/h3'"
+t "humans-md adds the pinned marketplace once and installs the plugin; nothing is vendored, merged or written to ~/.humans" "[ \$(grep -c 'plugin marketplace add cmdai-hq/humans-md-plugins@v0.3.2' '$CLAUDE_LOG') = 1 ] && grep -qx 'plugin install humans-md@humans-md --scope user' '$CLAUDE_LOG' && ! grep -q humans-md '$C/settings.json' && [ \"\$(cat '$HOME/.humans/HUMANS.md')\" = mine ] && [ \$(ls '$HOME/.humans' | wc -l) = 1 ]"
+fresh hm3; tkreset; IP --no-plugins --with humans-md
+t "--no-plugins installs nothing for humans-md" "! grep -q humans-md '$CLAUDE_LOG'"
+fresh hm4; tkreset; mkdir -p "$HOME/.humans"; printf 'mine\n' > "$HOME/.humans/HUMANS.md"; IP --with humans-md; : > "$CLAUDE_LOG"; UP --with humans-md
+t "uninstall --with humans-md removes the plugin and the marketplace it added, and keeps ~/.humans" "grep -qx 'plugin uninstall humans-md@humans-md --scope user' '$CLAUDE_LOG' && grep -qx 'plugin marketplace remove humans-md' '$CLAUDE_LOG' && [ \"\$(cat '$HOME/.humans/HUMANS.md')\" = mine ]"
+fresh hm5; tkreset; touch "$CLAUDE_LOG.mk2" "$CLAUDE_LOG.pl2"; IP --with humans-md; cp "$CLAUDE_LOG" "$T/hm.inst"; : > "$CLAUDE_LOG"; UP --with humans-md
+t "humans-md already installed by the user is left alone on install and on uninstall" "! grep -q 'humans-md' '$T/hm.inst' && ! grep -q humans-md '$CLAUDE_LOG'"
 t "unknown optional is still rejected" "! bash '$WB/install.sh' --dry-run --with nope"
 echo "== other agents (codex, cursor)"
 fresh agents; mkdir -p "$HOME/.codex"; printf '# mine\n' > "$HOME/.codex/AGENTS.md"; cp "$HOME/.codex/AGENTS.md" "$T/agents.orig"

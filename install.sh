@@ -3,8 +3,8 @@
 #
 # Usage:
 #   ./install.sh                          core only
-#   ./install.sh --with vault,wsl         core + chosen optionals (vault, accounts, wsl, briefing, panels, token-keeper)
-#   ./install.sh --all                    core + every optional except panels and token-keeper (opt-in by name)
+#   ./install.sh --with vault,wsl         core + chosen optionals (vault, accounts, wsl, briefing, panels, token-keeper, humans-md)
+#   ./install.sh --all                    core + every optional except panels, token-keeper and humans-md (opt-in by name)
 #   ./install.sh --agent claude,codex     which agents to install for (claude, codex, cursor; default: claude)
 #   ./install.sh --dry-run [...]          show what would happen, change nothing
 #   ./install.sh --no-plugins [...]       skip the marketplace plugins (and do not enable them)
@@ -28,7 +28,7 @@ RECEIPT="$STATE/receipt.json"; FILES="$STATE/files.tsv"
 AGENT_STATE="$SHARE/state/agents"; AFILES="$AGENT_STATE/files.tsv"   # Codex/Cursor files are shared by every Claude config dir
 WB_STAMP="$(date +%Y%m%d%H%M%S)"
 ALL_OPTIONALS="vault accounts wsl briefing"   # what --all installs
-KNOWN_OPTIONALS="$ALL_OPTIONALS panels token-keeper"   # panels removes HUD items and token-keeper rewrites credential files: never implied by --all
+KNOWN_OPTIONALS="$ALL_OPTIONALS panels token-keeper humans-md"   # panels removes HUD items, token-keeper rewrites credential files and humans-md runs a third-party hook on personal data: never implied by --all
 OPTIONALS=""; DRY=0; PLUGINS=1; UNINSTALL=0; VAULT_PATH="$HOME/vault"; VAULT_PATH_GIVEN=0
 MIN_MODS_VERSION="2.1.287"
 AGENTS="claude"; AGENTS_GIVEN=0; KNOWN_AGENTS="claude codex cursor"
@@ -151,7 +151,7 @@ insert_block() { # insert_block <NAME> <block-file> [target.md]  (default: CLAUD
   rm -f "$tmp"
 }
 
-optional_args() { OPT_ARGS=(); case "$1" in vault) OPT_ARGS=(--path "$VAULT_PATH") ;; token-keeper) [ "$PLUGINS" = 1 ] || OPT_ARGS=(--no-plugins) ;; esac; }
+optional_args() { OPT_ARGS=(); case "$1" in vault) OPT_ARGS=(--path "$VAULT_PATH") ;; token-keeper|humans-md) [ "$PLUGINS" = 1 ] || OPT_ARGS=(--no-plugins) ;; esac; }
 # remember the vault path so uninstall compares against the same rendered skill
 if [ "$UNINSTALL" = 1 ] && [ "$VAULT_PATH_GIVEN" = 0 ] && [ -f "$STATE/vault-path" ]; then
   VAULT_PATH="$(cat "$STATE/vault-path")"

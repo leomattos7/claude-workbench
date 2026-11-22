@@ -31,7 +31,7 @@ Requirements: Linux or WSL, `git` and `python3`. Claude Code must already be ins
 | **Safe defaults** | Denies the `Read` tool on `.env*` and `~/.ssh`. Asks before `git push`, `gh pr create/merge` and `gh repo delete`. Denies `Agent(fork)` so every subagent gets an explicit model. Context guard at 70%. These are pattern rules, so variants such as `git -C dir push` or `cat .env` are not caught. |
 | **Plugins** (from their marketplaces) | `oh-my-claudecode` (pinned v5.7.31), `mattpocock-skills`, `andrej-karpathy-skills`. |
 
-### Optionals (`--with <name>`, or `--all` for all but `panels` and `token-keeper`)
+### Optionals (`--with <name>`, or `--all` for all but `panels`, `token-keeper` and `humans-md`)
 
 | Name | What it does |
 |---|---|
@@ -41,6 +41,7 @@ Requirements: Linux or WSL, `git` and `python3`. Claude Code must already be ins
 | `briefing` | A morning summary from your git repos and handoffs, run through `claude -p` with built-in tools, MCP servers and customizations disabled. Opt-in cron, and it costs tokens per run. [Details](optional/briefing/README.md) |
 | `panels` | A lean status line: turns off the HUD's context and quota items so they are not shown twice next to the `context-bar` and `orca-quota` panels. Opt-in by name (not in `--all`); the panels are third-party and installed by you. [Details](optional/panels/README.md) |
 | `token-keeper` | Keeps the OAuth login of your Claude config dirs fresh while any session is open, so a rarely used account is not logged out. Pairs with `accounts`. Opt-in by name (not in `--all`): the mod rewrites `.credentials.json` files. Installs the plugin from [leomattos7/claude-token-keeper](https://github.com/leomattos7/claude-token-keeper), pinned to a tag, through the `claude` CLI. [Details](optional/token-keeper/README.md) |
+| `humans-md` | Loads your own `~/.humans/HUMANS.md` (how you want agents to write to you, when to ask, when to interrupt) at the start of each Claude Code session. Opt-in by name (not in `--all`): third-party code that runs unsandboxed and reads a file that can hold personal information. Installs the official plugin from [cmdai-hq/humans-md-plugins](https://github.com/cmdai-hq/humans-md-plugins), pinned to a tag, through the `claude` CLI; it never creates or edits your profile. [Details](optional/humans-md/README.md) |
 
 ## Other agents (Codex, Cursor)
 
