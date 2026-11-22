@@ -110,7 +110,7 @@ To verify Claude's approval round trip against the real CLI, run `python3 -I tes
 
 The fingerprint is a hash of the rendered rules text and of the installed file, so it shows what was installed, not what a running session loaded. For Cursor it covers only the template file the installer writes; Cursor reads it only after you paste it into Settings > Rules or copy it to a project's `AGENTS.md`.
 
-After installing, run `python3 -I tests/claude_harness_probe.py` to check the installed harness with real programmatic Claude turns. It checks that the SessionStart hook injects a disposable handoff title into the agent's context, and that a `git push` to a disposable local remote is not completed without a human approval. It uses the real Claude configuration and disposable directories, and needs working Claude authentication. Each probe depends on the model's behavior, so repeat it before relying on one result.
+After installing, run `python3 -I tests/claude_harness_probe.py` to check the installed harness with real programmatic Claude turns. It checks that the SessionStart hook injects a disposable handoff title into the agent's context, and that the installed `ask` rule denies a `git push` to a disposable local remote even when a command-line `allow` rule would permit it. A probe that cannot attribute its result to the installed harness reports INCONCLUSIVE (exit 2) instead of PASS. It uses the real Claude configuration and disposable directories, and needs working Claude authentication. Each probe depends on the model's behavior, so repeat it before relying on one result.
 
 ## Credits
 
