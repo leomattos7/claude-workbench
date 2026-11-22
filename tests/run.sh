@@ -9,7 +9,7 @@ t()  { if eval "$2" >/dev/null 2>&1; then echo "  ok   $1"; pass=$((pass+1)); el
 DENY="${WORKBENCH_DENYLIST:-$HOME/.config/workbench/denylist}"
 ALLOW="${WORKBENCH_ALLOWLIST:-$HOME/.config/workbench/allowlist}"
 T="$(mktemp -d)"; trap 'rm -rf "$T"' EXIT
-export HOME="$T/home"; unset CLAUDE_CONFIG_DIR; mkdir -p "$HOME/.claude"
+export HOME="$T/home"; unset CLAUDE_CONFIG_DIR WORKBENCH_STATE; mkdir -p "$HOME/.claude"
 C="$HOME/.claude"
 cat > "$C/settings.json" <<'JSON'
 {
@@ -75,7 +75,7 @@ t "workbench skills removed" "[ ! -e '$C/skills/work-mode' ] && [ ! -e '$C/skill
 t "vault content kept" "[ -f '$HOME/vault/CLAUDE.md' ]"
 
 echo "== safety (review findings)"
-fresh() { export HOME="$T/h-$1"; unset CLAUDE_CONFIG_DIR; mkdir -p "$HOME/.claude"; C="$HOME/.claude"; }
+fresh() { export HOME="$T/h-$1"; unset CLAUDE_CONFIG_DIR WORKBENCH_STATE; mkdir -p "$HOME/.claude"; C="$HOME/.claude"; }
 I() { bash "$WB/install.sh" --no-plugins "$@" >/dev/null 2>&1; }
 U() { bash "$WB/uninstall.sh" "$@" >/dev/null 2>&1; }
 
@@ -278,9 +278,9 @@ U --agent codex --with vault
 t "scoped vault uninstall keeps peer skills and contents" "[ ! -e '$HOME/.agents/skills/vault' ] && [ -f '$HOME/.agents/skills/workbench-sessions/workbench.py' ] && [ -f '$C/skills/vault/SKILL.md' ] && [ -f '$HOME/Shared Vault/manifest.tsv' ]"
 U
 fresh harness-render; cp -r "$WB" "$T/wb-render"; printf '\nVault lives at {{VAULT_PATH}}\n' >> "$T/wb-render/core/CLAUDE.md"
-bash "$T/wb-render/install.sh" --no-plugins --agent claude,codex,cursor --with vault --vault-path "$HOME/Shared Vault" >/dev/null 2>&1
+t "rendered-rules install exits 0" "bash '$T/wb-render/install.sh' --no-plugins --agent claude,codex,cursor --with vault --vault-path '$HOME/Shared Vault'"
 t "rules fingerprint covers the rendered text the agents receive" "python3 -I '$WB/tests/check_installed_harness.py' '$HOME/Shared Vault'"
-bash "$T/wb-render/uninstall.sh" >/dev/null 2>&1
+t "rendered-rules uninstall exits 0" "bash '$T/wb-render/uninstall.sh'"
 t "full uninstall removes the shared harness record" "[ ! -e '$HOME/.local/state/workbench/harness.json' ]"
 fresh harness-keep; I --agent claude,codex; U --agent claude
 t "claude uninstall keeps the harness record while codex remains" "[ -f '$HOME/.local/state/workbench/harness.json' ]"

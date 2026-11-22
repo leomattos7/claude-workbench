@@ -332,8 +332,9 @@ for a in codex cursor; do if has_agent "$a"; then with_agent_state install_agent
 
 shared_vault=""
 case " $OPTIONALS " in *" vault "*) shared_vault="$VAULT_PATH" ;; esac
-rendered_rules="$(mktemp)"; render "$WB/core/CLAUDE.md" "$rendered_rules"   # hash what the agents actually receive
-wbpy harness-install "$HARNESS_CONFIG" "$rendered_rules" "$shared_vault" "$DRY"; rm -f "$rendered_rules"
+rendered_rules="$(mktemp)"; trap 'rm -f "$rendered_rules"' EXIT   # hash what the agents actually receive
+render "$WB/core/CLAUDE.md" "$rendered_rules"
+wbpy harness-install "$HARNESS_CONFIG" "$rendered_rules" "$shared_vault" "$DRY"
 
 echo
 echo "== Done. Next steps:"
